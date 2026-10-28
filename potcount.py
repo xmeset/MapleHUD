@@ -19,12 +19,14 @@ class PotCounter:
 
     A jump that matches one or two of the potions in use is counted; anything else (heals, chairs,
     level-ups) is not. Hits and skill costs landing in the same moment only make a jump smaller (up to
-    `down`), regen only a little bigger (up to `up`).
+    `down`), regen only a little bigger (up to `up`). With `skill_heals`, HP rising while MP is spent
+    is a healing skill (Final Strike, Heal), not a potion.
     A reading is believed once seen twice in a row."""
 
-    def __init__(self, potions, down=45, up=15):
+    def __init__(self, potions, down=45, up=15, skill_heals=True):
         self.potions = [p for p in potions if p.get("hp") or p.get("mp")]
         self.down, self.up = down, up
+        self.skill_heals = skill_heals
         self.used = {}
         self.last = {"hp": None, "mp": None}
         self.events = []
@@ -54,6 +56,10 @@ class PotCounter:
             return []
         dhp, dmp = hp - hp0, mp - mp0
         if dhp <= self.up and dmp <= self.up:
+            return []
+        if self.skill_heals and dhp > self.up and dmp < 0:
+            if self.on_jump:
+                self.on_jump(base, reading, "leczenie ze skilla – pomijam")
             return []
         combo = self._explain(dhp, hp == hpm, hpm, dmp, mp == mpm, mpm) if counting else None
         if self.on_jump:

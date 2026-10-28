@@ -19,11 +19,12 @@ Nic nie trzeba instalować. Wymagany Windows 10 lub 11.
 
 | Panel | Zawartość |
 |---|---|
-| **Lewy** | LV, mapa, pasek EXP, EXP/h, EXP/h z ostatnich 5 min, czas do następnego levelu, czas sesji |
+| **Lewy** | LV, mapa, pasek EXP, EXP/h i % levelu na godzinę, EXP/h z ostatnich 5 min, czas do następnego levelu, czas sesji |
 | **Prawy** | meso/h, koszt potów/h, netto/h (meso − poty) |
-| **▴ Poty** | lista potów: ile zużytych, ile na godzinę, koszt, aktualne HP/MP |
+| **▴ Poty** | lista potów z ikonkami: ile zużytych, ile na godzinę, koszt, aktualne HP/MP |
+| **■ Koniec grindu** | podsumowanie: czas, mapy, EXP i % levelu, zebrane meso, koszt potów, netto. Zapisuje do `sesje.csv`. ▶ zaczyna nowy grind. |
 
-Panele same dopasowują się do rozmiaru okna gry (1366×768, 1920×1080 i inne) i chowają się, gdy gra nie jest na wierzchu.
+Panele same dopasowują się do rozmiaru okna gry (1366×768, 1920×1080 i inne) i chowają się, gdy gra nie jest na wierzchu. Po wyłączeniu gry MapleHUD zamyka się sam (po ok. 10 s).
 
 ## Skąd bierze dane
 
@@ -33,14 +34,14 @@ MapleHUD tylko **robi zrzuty ekranu** i odczytuje z nich liczby, tak jak OBS alb
 |---|---|
 | **EXP** | pasek EXP na dole gry |
 | **Meso** | licznik meso w ekwipunku: otwórz eq na starcie i co jakiś czas (zakupy w sklepie, storage i trade są pomijane) |
-| **Poty** | skoki HP/MP na pasku statusu, np. +100 HP = Red Potion, +200 MP = Blue Potion. Działa też z potami od peta. |
+| **Poty** | liczba sztuk na quickslocie (dokładne, także poty od peta), a dla potów spoza quickslota skoki HP/MP na pasku statusu, np. +100 HP = Red Potion. Leczenie ze skilli (HP w górę przy zużyciu many) nie jest liczone jako pot. |
 | **Mapa** | nazwa z minimapy (minimapa musi być otwarta) |
 
 Liczenie pauzuje się samo po 15 s bez EXP i rusza przy następnym EXP.
 
 ## Ustawienia
 
-**Prawy klik na panelu**: start/pauza, reset sesji, lista potów, przezroczystość, poziom (gdy pasek pokazuje tylko %), zamknij.
+**Prawy klik na panelu**: start/pauza, koniec grindu, reset sesji, lista potów, przezroczystość, poziom (gdy pasek pokazuje tylko %), zamknij.
 
 **`potki.json`** (obok MapleHUD.exe):
 
@@ -55,6 +56,8 @@ Liczenie pauzuje się samo po 15 s bez EXP i rusza przy następnym EXP.
 - `hp` / `mp` – ile przywraca: liczba albo procent, np. `"35%"`.
 - `cena` – ile płacisz za sztukę. `null` oznacza cenę w sklepie NPC.
 - `tolerancja_spadek` / `tolerancja_regen` – o ile skok może się różnić, gdy w tej samej chwili dostaniesz hita albo użyjesz skilla.
+- `mnoznik_hp` / `mnoznik_mp` – bonus klasy do potów, np. `1.5` dla warriora z Improved HP Recovery.
+- `pomijaj_leczenie_skilli` – `true`: skok HP przy zużyciu many to skill, nie pot.
 
 Po zmianie wybierz **prawy klik → Wczytaj potki.json**.
 
@@ -62,7 +65,8 @@ Po zmianie wybierz **prawy klik → Wczytaj potki.json**.
 
 W folderze `data` obok exe:
 
-- **`mapy.csv`** – EXP/h, meso/h, koszt potów/h i netto/h dla każdej mapy (co najmniej 2 min). Otwierasz w Excelu.
+- **`mapy.csv`** – każda mapa (co najmniej 2 min): czas, EXP, EXP/h, % levelu/h, zebrane meso, koszt potów, netto i zużyte poty. Otwierasz w Excelu.
+- **`sesje.csv`** – to samo dla całego grindu, zapisywane po kliknięciu ■, przy resecie i zamknięciu.
 - **`sesja.log`** – szczegółowy log: każdy rozpoznany pot, zmiany meso, mapy. Przydatny, gdy coś nie działa.
 
 ## Ograniczenia

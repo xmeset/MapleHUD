@@ -1,5 +1,5 @@
 {
-  "_info": "uzywane: poty, ktore liczy (ze skokow HP/MP). hp/mp: ile przywraca (liczba albo \"35%\"). cena: za sztuke, null = cena NPC. tolerancja_spadek: o ile skok moze byc mniejszy (trafienie, koszt skilla w tej samej chwili). tolerancja_regen: o ile wiekszy (regen). Po zmianie: PPM > Wczytaj potki.json.",
+  "_info": "uzywane: poty, ktore liczy (ze skokow HP/MP). hp/mp: ile przywraca (liczba albo \"35%\"). cena: za sztuke, null = cena NPC. tolerancja_spadek: o ile skok moze byc mniejszy (trafienie, koszt skilla w tej samej chwili). tolerancja_regen: o ile wiekszy (regen). Po zmianie: PPM > Wczytaj potki.json. pomijaj_leczenie_skilli: skok HP przy zuzyciu many (Final Strike, Heal) to nie pot. mnoznik_hp / mnoznik_mp: gdy klasa ma bonus do potow, np. 1.5.",
   "uzywane": [
     "Red Potion",
     "Orange Potion",
@@ -9,6 +9,9 @@
   ],
   "tolerancja_spadek": 45,
   "tolerancja_regen": 15,
+  "pomijaj_leczenie_skilli": true,
+  "mnoznik_hp": 1,
+  "mnoznik_mp": 1,
   "potki": {
     "Red Potion": {
       "hp": 100,

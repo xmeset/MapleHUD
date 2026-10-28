@@ -26,9 +26,11 @@ if not (HERE / "potki.json").exists() and (BUNDLE / "potki.json").exists():
 
 import mss  # noqa: E402
 import mss.tools  # noqa: E402
+from PIL import Image, ImageTk  # noqa: E402
 
 import maple_exp as m  # noqa: E402
 import hpmp  # noqa: E402
+import potions  # noqa: E402
 from capture import ScreenCapture, grab  # noqa: E402
 from mesocount import MesoCounter  # noqa: E402
 from potcount import PotCounter, amount  # noqa: E402
@@ -47,8 +49,11 @@ POLL = 1.5
 HPMP_POLL = 0.25
 SESJA = DATA / "sesja.log"
 MAPY = DATA / "mapy.csv"
+SESJE = DATA / "sesje.csv"
+CSV_HEAD = ["data", "start", "koniec", "minuty", "lv", "exp", "exp_h", "proc_lv_h", "meso", "poty_koszt", "netto", "poty"]
 MIN_MAP_ROW = 120
 SUMMARY_EVERY = 30
+GAME_GONE = 10
 UI_HALF = 400
 
 HEAD_TOP, HEAD_BOT = "#ffd98a", "#f29b38"
@@ -146,6 +151,8 @@ class Potki:
         self.in_use = [n for n in cfg.get("uzywane") or [] if isinstance(n, str)]
         num = lambda k, d: cfg.get(k) if isinstance(cfg.get(k), (int, float)) else d
         self.down, self.up = num("tolerancja_spadek", 45), num("tolerancja_regen", 15)
+        self.mult = {"hp": num("mnoznik_hp", 1), "mp": num("mnoznik_mp", 1)}
+        self.skill_heals = cfg.get("pomijaj_leczenie_skilli", True) is not False
 
     def price(self, name):
         p = self.items.get(name, {}).get("cena")
@@ -155,14 +162,15 @@ class Potki:
 
     def stats(self, name):
         it = self.items.get(name, {})
-        return it.get("hp"), it.get("mp")
+        boost = lambda k: it.get(k) * self.mult[k] if isinstance(it.get(k), (int, float)) else it.get(k)
+        return boost("hp"), boost("mp")
 
     def counter(self):
         pots = []
         for n in self.in_use:
             hp, mp = self.stats(n)
             pots.append(dict(name=n, hp=hp, mp=mp))
-        return PotCounter(pots, self.down, self.up)
+        return PotCounter(pots, self.down, self.up, self.skill_heals)
 
 
 class HudReader(m.ScreenReader):
@@ -191,7 +199,6 @@ class Engine:
     def __init__(self, cfg, potki):
         self.cfg = cfg
         self.reader = HudReader(m.DigitTemplates.load())
-        self.reader.next_bar = float("inf")
         self.reader.saved_v2 = dict(cfg.get("exp_v2_spots") or {})
         saved = cfg.get("mesos_box")
         if isinstance(saved, list) and len(saved) == 6:
@@ -199,8 +206,14 @@ class Engine:
         self.session = m.Session(cfg.get("gap_seconds", 15))
         self.t = self.session.exp
         self.meso = MesoCounter()
+        self.bar = potions.PotionTracker()
+        self.bar_names, self.bar_counts = set(), {}
         self.map_cur, self.map_cand, self.seg = None, None, None
         self.set_counter(potki)
+        self.potki_ref = potki
+        self.maps_done = []
+        self._start_segment()
+        self.run = self.seg
         self.q = queue.Queue()
         self.stop = threading.Event()
         self.status = "Szukam gry..."
@@ -211,7 +224,6 @@ class Engine:
         self.hpmp_at = 0.0
         self.ui_scale = None
         self.dirty_cfg = False
-        self.potki_ref = potki
         self.last_mesos = self.last_window = self.last_map_read = None
         self.next_summary = time.monotonic() + SUMMARY_EVERY
         try:
@@ -240,9 +252,14 @@ class Engine:
         (hp, hpm), (mp, mpm) = reading
         self.log(f"HP {hp0}->{hp}/{hpm} ({hp - hp0:+})  MP {mp0}->{mp}/{mpm} ({mp - mp0:+})  => {what}")
 
+    def used(self):
+        names = dict.fromkeys(list(self.counter.used) + list(self.bar.used) + list(self.bar_names))
+        return {n: self.bar.used.get(n, 0) if n in self.bar_names else self.counter.used.get(n, 0) for n in names}
+
     def _summary(self, potki):
         s = self.snapshot(potki)
-        used = ", ".join(f"{n} x{c}" for n, c in self.counter.used.items() if c) or "brak"
+        used = ", ".join(f"{n} x{c}" + (f" (pasek HP/MP: {self.counter.used.get(n, 0)})" if n in self.bar_names else "")
+                         for n, c in self.used().items() if c) or "brak"
         self.log(f"[co {SUMMARY_EVERY}s] czas {fmt_clock(s['elapsed'])}, stan {s['state']}, EXP {s['exp']} "
                  f"EXP/h {fmt(s['exp_h'])}, meso w eq {self.meso.base}, zarobione {self.meso.gained}, "
                  f"meso/h {fmt(s['meso_h'])}, poty: {used}, koszt {fmt(s['cost'])}, "
@@ -314,7 +331,7 @@ class Engine:
         return s.on and self.t.exp is not None and not m.is_town(self.map_cur)
 
     def _start_segment(self):
-        self.seg = dict(gained=self.t.gained, el=self.t.elapsed(), meso=self.meso.gained, used=dict(self.counter.used),
+        self.seg = dict(gained=self.t.gained, el=self.t.elapsed(), meso=self.meso.gained, used=self.used(), at=time.time(),
                         level=m.level_for_req(self.t.req) or self.cfg.get("level"))
 
     def _map_read(self, name):
@@ -344,33 +361,64 @@ class Engine:
             self.map_cur, self.map_cand = name, None
             self._start_segment()
 
+    def _totals(self, g, maps=None):
+        el = self.t.elapsed() - g["el"]
+        used = {n: c - g["used"].get(n, 0) for n, c in self.used().items() if c - g["used"].get(n, 0) > 0}
+        cost = sum(c * self.potki_ref.price(n) for n, c in used.items())
+        exp = self.t.gained - g["gained"]
+        meso = self.meso.gained - g["meso"] if self.meso.base is not None else None
+        level = g["level"] or m.level_for_req(self.t.req) or self.cfg.get("level")
+        need = m.EXP_TABLE[level - 1] if level and level <= len(m.EXP_TABLE) else None
+        exp_h = exp / el * 3600 if el > 0 else 0
+        proc_h = exp_h / need * 100 if need else None
+        used_txt = " ".join(f"{n} x{c}" for n, c in used.items())
+        info = dict(exp=exp, exp_h=exp_h, proc_h=proc_h, proc=exp / need * 100 if need else None, meso=meso,
+                    cost=cost, used=used, level=level)
+        start = time.localtime(g["at"])
+        vals = [time.strftime("%Y-%m-%d", start), time.strftime("%H:%M", start), time.strftime("%H:%M"),
+                round(el / 60), level or "", exp, round(exp_h), "" if proc_h is None else f"{proc_h:.1f}".replace(".", ","),
+                "" if meso is None else meso, cost, "" if meso is None else meso - cost, used_txt]
+        if maps is not None:
+            vals.insert(1, maps)
+        return el, vals, info
+
+    def _csv(self, path, head, vals):
+        try:
+            if path.exists():
+                with open(path, encoding="utf-8-sig") as f:
+                    old = f.readline().strip() != ";".join(head)
+                if old:
+                    path.replace(path.with_name(path.stem + "_stare" + path.suffix))
+            new = not path.exists()
+            with open(path, "a", encoding="utf-8-sig" if new else "utf-8") as f:
+                if new:
+                    f.write(";".join(head) + "\n")
+                f.write(";".join(str(v).replace(";", ",") for v in vals) + "\n")
+        except Exception as e:
+            m.log_error(f"writing {path.name}", e)
+
     def map_row(self):
         g, name = self.seg, self.map_cur
         if not g or not name:
             return
-        el = self.t.elapsed() - g["el"]
+        el, vals, _ = self._totals(g)
         if el < MIN_MAP_ROW:
             return
-        used = {n: c - g["used"].get(n, 0) for n, c in self.counter.used.items() if c - g["used"].get(n, 0) > 0}
-        potki = self.potki_ref
-        cost = sum(c * potki.price(n) for n, c in used.items())
-        exp_h = (self.t.gained - g["gained"]) / el * 3600
-        meso_h = (self.meso.gained - g["meso"]) / el * 3600 if self.meso.base is not None else None
-        cost_h = cost / el * 3600
-        net_h = (meso_h or 0) - cost_h
-        used_txt = " ".join(f"{n}x{c}" for n, c in used.items())
-        new = not MAPY.exists()
-        try:
-            with open(MAPY, "a", encoding="utf-8") as f:
-                if new:
-                    f.write("data;mapa;lv;minuty;exp_h;meso_h;koszt_potow_h;netto_h;poty\n")
-                vals = [time.strftime("%Y-%m-%d %H:%M"), name, g["level"] or "", round(el / 60, 1), round(exp_h),
-                        "" if meso_h is None else round(meso_h), round(cost_h), round(net_h), used_txt]
-                f.write(";".join(str(v) for v in vals) + "\n")
-        except Exception as e:
-            m.log_error("writing mapy.csv", e)
-        self.log(f"MAPA {name}: {fmt_clock(el)}, EXP/h {fmt(exp_h)}, meso/h {fmt(meso_h)}, poty/h {fmt(cost_h)}, "
-                 f"netto/h {fmt(net_h)}, poty: {used_txt or 'brak'}")
+        vals.insert(1, name)
+        self._csv(MAPY, CSV_HEAD[:1] + ["mapa"] + CSV_HEAD[1:], vals)
+        self.log("MAPA " + " | ".join(f"{k} {v}" for k, v in zip(CSV_HEAD[:1] + ["mapa"] + CSV_HEAD[1:], vals)))
+        self.maps_done.append(name)
+
+    def session_row(self):
+        g = self.run
+        maps = list(dict.fromkeys(self.maps_done + ([self.map_cur] if self.map_cur else [])))
+        el, vals, info = self._totals(g, ", ".join(maps))
+        info.update(el=el, maps=maps, saved=el >= MIN_MAP_ROW)
+        if info["saved"]:
+            head = CSV_HEAD[:1] + ["mapy"] + CSV_HEAD[1:]
+            self._csv(SESJE, head, vals)
+            self.log("SESJA " + " | ".join(f"{k} {v}" for k, v in zip(head, vals)))
+        return info
 
     def pump(self):
         while True:
@@ -416,6 +464,8 @@ class Engine:
             got = self.meso.feed(r.mesos, r.window, s.on and t.exp is not None, now)
             if got:
                 self.log(f"meso +{got:,} (zarobione w sesji: {self.meso.gained:,})")
+        if r.bar is not None:
+            self._bar(r.bar)
         if r.map:
             self._map_read(m.snap_map_name(r.map))
         self.error = not r.candidates
@@ -439,21 +489,54 @@ class Engine:
             status = " ".join(x for x in (r.where, r.note) if x)
         self.status = status_pl(status)
 
+    def _bar(self, slots):
+        counts = {}
+        for sl in slots:
+            if sl.count is not None:
+                counts[sl.name] = counts.get(sl.name, 0) + sl.count
+        for n, c in counts.items():
+            if self.bar_counts.get(n) != c:
+                self.log(f"quickslot: {n} {self.bar_counts.get(n)} -> {c}")
+        self.bar_counts.update(counts)
+        if counts and self.counting():
+            for n in counts:
+                if n not in self.bar_names:
+                    self.bar_names.add(n)
+                    self.bar.used.setdefault(n, 0)
+        self.bar.observe(slots, self.counting())
+
     def toggle(self):
         if self.session.on:
             self.session.pause()
         else:
             self.session.start(time.monotonic())
 
-    def reset(self):
+    def finish(self):
+        if self.t.elapsed() - self.run["el"] < 1 and not self.meso.gained and not any(self.used().values()):
+            return None
+        self.map_row()
+        info = self.session_row()
+        self.session.pause()
+        self.reset(save=False)
+        self.log("=== koniec grindu")
+        return info
+
+    def reset(self, save=True):
+        if save:
+            self.map_row()
+            self.session_row()
         on = self.session.on
         self.session.reset()
         self.counter.reset()
+        self.bar.reset()
+        self.bar_names = set()
         self.meso.gained = 0
         self.reader.look_again()
         if on:
             self.session.start(time.monotonic())
+        self.maps_done = []
         self._start_segment()
+        self.run = self.seg
 
     def snapshot(self, potki):
         t, s = self.t, self.session
@@ -464,7 +547,7 @@ class Engine:
         pct = (t.exp / t.req * 100) if t.exp is not None and t.req else t.pct
         ttl = (t.req - t.exp) / rate * 3600 if rate and t.req and t.exp is not None else None
         meso_h = self.meso.gained / el * 3600 if el >= 30 and self.meso.base is not None else None
-        used = self.counter.used
+        used = self.used()
         cost = sum(n * potki.price(name) for name, n in used.items())
         cost_h = cost / el * 3600 if el >= 30 else None
         net_h = (meso_h or 0) - (cost_h or 0) if meso_h is not None or cost_h else None
@@ -479,7 +562,8 @@ class Engine:
                 hp_h += amount(hp, hpm) * per_h
                 mp_h += amount(mp, mpm) * per_h
             rows.append(dict(name=name, used=n, per_h=per_h, cost=n * potki.price(name), hp=hp, mp=mp,
-                             price=potki.price(name)))
+                             price=potki.price(name), bar=name in self.bar_names,
+                             jumps=self.counter.used.get(name, 0)))
         state = "on" if t.running else "wait" if s.on else "off"
         if t.exp is None:
             state = "wait"
@@ -491,7 +575,9 @@ class Engine:
         elif self.died_at and now - self.died_at < 8:
             flash = "Śmierć – strata EXP nie liczy się do EXP/h."
         last = self.counter.events[-1] if self.counter.events else None
+        pct_h = rate / t.req * 100 if rate and t.req else None
         return dict(map=self.map_cur, state=state, elapsed=el, level=level, pct=pct, exp=t.exp, ttl=ttl, exp_h=rate,
+                    pct_h=pct_h,
                     exp_5=t.rolling_rate(), meso_h=meso_h, meso_seen=self.meso.base is not None, cost=cost,
                     cost_h=cost_h, net_h=net_h, rows=rows, hp_h=hp_h, mp_h=mp_h, status=flash or self.status,
                     flash=bool(flash), estimated=t.estimated, waiting=s.waiting, on=s.on,
@@ -500,7 +586,8 @@ class Engine:
 
 
 def demo_snapshot():
-    return dict(map="Henesys Hunting Ground I", state="on", elapsed=2712, level=27, pct=14.77, exp=9406, ttl=4980, exp_h=44178, exp_5=46100,
+    return dict(map="Henesys Hunting Ground I", state="on", elapsed=2712, level=27, pct=14.77, exp=9406, ttl=4980, exp_h=44178,
+                pct_h=15.0, exp_5=46100,
                 meso_h=312400, meso_seen=True, cost=7350, cost_h=9757, net_h=302643, rows=[
                     dict(name="Red Potion", used=41, per_h=54.4, cost=2050, hp=100, mp=0, price=50),
                     dict(name="Meat", used=12, per_h=15.9, cost=960, hp=160, mp=0, price=80),
@@ -523,12 +610,28 @@ class Panel:
         self.c.pack()
         self.size = None
         self.c.bind("<Button-3>", hud.menu_at)
-        for tag, fn in (("b_toggle", hud.toggle), ("b_reset", hud.reset), ("b_more", hud.toggle_details),
-                        ("b_close", hud.close), ("body", hud.toggle_details)):
-            self.c.tag_bind(tag, "<ButtonRelease-1>", lambda e, f=fn: f())
-            if tag != "body":
-                self.c.tag_bind(tag, "<Enter>", lambda e: self.c.config(cursor="hand2"))
-                self.c.tag_bind(tag, "<Leave>", lambda e: self.c.config(cursor=""))
+        self.actions = {"b_toggle": hud.toggle, "b_end": hud.finish, "b_more": hud.toggle_details,
+                        "b_close": hud.close, "body": hud.toggle_details}
+        self.c.bind("<ButtonRelease-1>", self._click)
+        self.c.bind("<Motion>", self._hover)
+
+    def _hit(self, e):
+        for item in reversed(self.c.find_overlapping(e.x - 1, e.y - 1, e.x + 1, e.y + 1)):
+            for tag in self.c.gettags(item):
+                if tag in self.actions:
+                    return tag
+        return None
+
+    def _click(self, e):
+        tag = self._hit(e)
+        if tag:
+            self.actions[tag]()
+
+    def _hover(self, e):
+        tag = self._hit(e)
+        cur = "hand2" if tag and tag != "body" else ""
+        if self.c.cget("cursor") != cur:
+            self.c.config(cursor=cur)
 
     def place(self, x, y, w, h):
         if self.size != (w, h):
@@ -570,12 +673,19 @@ class HUD:
         self.details = Panel(self, root, "details")
         self.details.win.withdraw()
         self.show_details = False
+        self.summ = Panel(self, root, "summary")
+        self.summ.win.withdraw()
+        self.summ.c.bind("<ButtonRelease-1>", lambda e: self.hide_summary())
+        self.summary = None
+        self.icons = {}
         self.visible = True
+        self.game_seen = None
         self.scale = 1.0
         self.menu = tk.Menu(root, tearoff=0)
         self.menu.add_command(label="MapleHUD © 2026 tesem", state="disabled")
         self.menu.add_separator()
         self.menu.add_command(label="Start / Pauza", command=self.toggle)
+        self.menu.add_command(label="Koniec grindu (podsumowanie)", command=self.finish)
         self.menu.add_command(label="Reset sesji", command=self.reset)
         self.menu.add_command(label="Szczegóły potów", command=self.toggle_details)
         self.menu.add_separator()
@@ -619,14 +729,27 @@ class HUD:
         if vis == self.visible:
             return
         self.visible = vis
-        for p in (self.left, self.right) + ((self.details,) if self.show_details else ()):
+        for p in (self.left, self.right) + ((self.details,) if self.show_details else ()) + \
+                ((self.summ,) if self.summary else ()):
             if vis:
                 p.win.deiconify()
                 p.win.attributes("-topmost", True)
             else:
                 p.win.withdraw()
 
+    def _game_closed(self):
+        if self.demo or not self.engine:
+            return False
+        hwnd, now = self.engine.reader.hwnd, time.monotonic()
+        if hwnd and ctypes.windll.user32.IsWindow(hwnd):
+            self.game_seen = now
+            return False
+        return self.game_seen is not None and now - self.game_seen > GAME_GONE
+
     def _tick(self):
+        if self._game_closed():
+            self.close()
+            return
         try:
             self._set_visible(self._game_in_front())
             if self.engine:
@@ -642,8 +765,11 @@ class HUD:
             self.draw_right(snap)
             if self.show_details:
                 self.draw_details(snap)
+            if self.summary:
+                self.draw_summary(self.summary)
             if self.engine:
-                rects = [p.rect() for p in (self.left, self.right) + ((self.details,) if self.show_details else ())]
+                rects = [p.rect() for p in (self.left, self.right) + ((self.details,) if self.show_details else ()) +
+                         ((self.summ,) if self.summary else ())]
                 self.engine.reader.own_rects = tuple(r for r in rects if r)
                 self.engine.reader.own_rect = self.engine.reader.own_rects[0] if self.engine.reader.own_rects else None
         except Exception as e:
@@ -674,8 +800,11 @@ class HUD:
             lx, rx = wx + m_, wx + ww - m_ - pw
         else:
             y = wy + wh - ph - round(3 * s)
+            bx, _, bw, _ = potions.bar_crop_box(ww, wh)
+            rx = int(wx + max(ww - zone, bx + bw) + m_)
+            pw = min(pw, int(wx + ww - m_ - rx))
             lx = int(wx + zone - m_ - pw)
-            rx = int(wx + ww - zone + m_)
+        self.lgeom = (lx, y, pw, ph)
         self.left.place(lx, y, pw, ph)
         self.right.place(rx, y, pw, ph)
         self.geom = (rx, y, pw, ph)
@@ -723,7 +852,7 @@ class HUD:
         dot = {"on": GREEN, "wait": "#f2b33a", "off": "#9a9a9a", "err": RED}[s["state"]]
         title = f"LV {s['level'] or '?'}" + (f"  ·  {s['map']}" if s.get("map") else "")
         self.header(c, w, hh, title if len(title) <= 34 else title[:33] + "…", dot)
-        x = self.buttons(c, w, hh, (("b_reset", "⟲"), ("b_toggle", "⏸" if s["on"] else "▶")))
+        x = self.buttons(c, w, hh, (("b_end", "■"), ("b_toggle", "⏸" if s["on"] else "▶")))
         c.create_text(x - 4 * sc, hh / 2, text=fmt_clock(s["elapsed"]), font=self.f("semi", 8.5), fill=HEAD_TEXT,
                       anchor="e")
         if s["pct"] is not None:
@@ -736,7 +865,8 @@ class HUD:
         else:
             pct = "" if s["pct"] is None else f" ({s['pct']:.1f}%)"
             nxt = (f"DO LV {s['level'] + 1}" if s["level"] else "DO LVL") + pct
-            self.columns(c, w, hh, (("EXP / H", fmt(s["exp_h"]), ORANGE), ("OST. 5 MIN", fmt(s["exp_5"]), TEXT),
+            lab = "EXP/HR" + (f"  ·  {s['pct_h']:.1f}%/HR" if s.get("pct_h") else "")
+            self.columns(c, w, hh, ((lab, fmt(s["exp_h"]), ORANGE), ("OST. 5 MIN", fmt(s["exp_5"]), TEXT),
                                     (nxt, fmt_time(s["ttl"]), TEXT)))
         c.create_rectangle(0, 0, w - 1, h - 1, outline=BORDER)
 
@@ -757,9 +887,9 @@ class HUD:
         c.create_text(x - 4 * sc, hh / 2, text=info, font=self.f("semi", 8.5), fill=col, anchor="e")
         net = s["net_h"]
         meso = fmt(s["meso_h"]) if s["meso_seen"] else "otwórz eq"
-        self.columns(c, w, hh, (("MESO / H", meso, GOLD),
-                                ("POTY / H", "-" + fmt(s["cost_h"]) if s["cost_h"] else "0", RED),
-                                ("NETTO / H", fmt(net), GREEN if net is None or net >= 0 else RED)))
+        self.columns(c, w, hh, (("MESO/HR", meso, GOLD),
+                                ("POTY/HR", "-" + fmt(s["cost_h"]) if s["cost_h"] else "0", RED),
+                                ("NETTO/HR", fmt(net), GREEN if net is None or net >= 0 else RED)))
         c.create_rectangle(0, 0, w - 1, h - 1, outline=BORDER)
 
     def draw_details(self, s):
@@ -794,18 +924,22 @@ class HUD:
         c.create_text(w - 8 * sc, hh / 2, text=hpmp_txt, font=self.f("semi", 8), fill=HEAD_TEXT, anchor="e")
         cx_used, cx_h = w * 0.58, w * 0.76
         c.create_text(cx_used, hh + 9 * sc, text="UŻYTE", font=self.f("semi", 7.5), fill=LABEL, anchor="e")
-        c.create_text(cx_h, hh + 9 * sc, text="NA H", font=self.f("semi", 7.5), fill=LABEL, anchor="e")
+        c.create_text(cx_h, hh + 9 * sc, text="NA HR", font=self.f("semi", 7.5), fill=LABEL, anchor="e")
         c.create_text(w - 10 * sc, hh + 9 * sc, text="KOSZT", font=self.f("semi", 7.5), fill=LABEL, anchor="e")
         y = y_rows
         for r in rows:
             hp, mp = r["hp"], r["mp"]
             col = PURPLE if hp and mp else RED if hp else BLUE if mp else ORANGE
             rrect(c, 6 * sc, y, w - 6 * sc, y + rh, round(6 * sc), fill=CARD, outline=mix(BODY, BORDER, 0.7))
-            c.create_oval(12 * sc, y + 7 * sc, 20 * sc, y + 15 * sc, fill=col, outline="")
-            c.create_text(26 * sc, y + 11 * sc, text=r["name"], font=self.f("semi", 9), fill=TEXT, anchor="w")
+            ic = self.icon(r["name"], 22 * sc)
+            if ic:
+                c.create_image(20 * sc, y + rh / 2, image=ic)
+            else:
+                c.create_oval(16 * sc, y + rh / 2 - 4 * sc, 24 * sc, y + rh / 2 + 4 * sc, fill=col, outline="")
+            c.create_text(36 * sc, y + 11 * sc, text=r["name"], font=self.f("semi", 9), fill=TEXT, anchor="w")
             info = " · ".join(x for x in (f"{hp} HP" if hp else "", f"{mp} MP" if mp else "",
-                                          f"{fmt(r['price'])} meso") if x)
-            c.create_text(26 * sc, y + 22 * sc, text=info, font=self.f("reg", 7.5), fill=LABEL, anchor="w")
+                                          f"{fmt(r['price'])} meso", "quickslot" if r.get("bar") else "") if x)
+            c.create_text(36 * sc, y + 22 * sc, text=info, font=self.f("reg", 7.5), fill=LABEL, anchor="w")
             c.create_text(cx_used, y + rh / 2, text=f"×{r['used']}", font=self.f("semi", 9), fill=TEXT, anchor="e")
             c.create_text(cx_h, y + rh / 2, text=fmt(r["per_h"]) if r["per_h"] else "—", font=self.f("semi", 9),
                           fill=TEXT, anchor="e")
@@ -815,6 +949,95 @@ class HUD:
         c.create_rectangle(0, 0, w - 1, h - 1, outline=BORDER)
         rx, ry, pw, ph = self.geom
         p.place(rx, ry - h - round(4 * sc), w, h)
+        c.tag_raise("all")
+
+    def icon(self, name, px):
+        px = max(12, round(px))
+        key = (name, px)
+        if key not in self.icons:
+            img = None
+            try:
+                im = Image.open(BUNDLE / "ikony" / f"{name}.png").convert("RGBA")
+                k = px / max(im.size)
+                im = im.resize((max(1, round(im.width * k)), max(1, round(im.height * k))),
+                               Image.NEAREST if k >= 1.5 else Image.LANCZOS)
+                img = ImageTk.PhotoImage(im, master=self.root)
+            except Exception:
+                pass
+            self.icons[key] = img
+        return self.icons[key]
+
+    def finish(self):
+        if self.engine:
+            info = self.engine.finish()
+            if info:
+                self.last_summary = info
+            self.summary = getattr(self, "last_summary", None)
+            if not self.summary:
+                return
+        else:
+            self.summary = dict(el=2712, maps=["Henesys Hunting Ground I", "Henesys Hunting Ground II"], exp=33280,
+                                exp_h=44178, proc_h=15.0, proc=11.3, meso=235300, cost=7350, level=27, saved=True,
+                                used={"Red Potion": 41, "Meat": 12, "Lemon": 19})
+        if self.visible:
+            self.summ.win.deiconify()
+            self.summ.win.attributes("-topmost", True)
+
+    def hide_summary(self):
+        self.summary = None
+        self.summ.win.withdraw()
+
+    def draw_summary(self, sm):
+        p, c, sc = self.summ, self.summ.c, self.scale
+        lx, ly, w, _ = self.lgeom
+        hh = round(18 * sc)
+        c.delete("all")
+        pad = round(10 * sc)
+        y = hh + round(8 * sc)
+        tid = c.create_text(pad, y, text=", ".join(sm["maps"]) or "—", font=self.f("semi", 8.5), fill=TEXT,
+                            anchor="nw", width=w - 2 * pad)
+        y = c.bbox(tid)[3] + round(6 * sc)
+        meso, cost = sm["meso"], sm["cost"]
+        net = None if meso is None else meso - cost
+        lines = [("EXP", f"+{fmt(sm['exp'])}" + (f"  ({sm['proc']:.1f}% lvl)" if sm.get("proc") else ""), ORANGE),
+                 ("EXP/HR", fmt(sm["exp_h"]) + (f"  ·  {sm['proc_h']:.1f}%/HR" if sm.get("proc_h") else ""), TEXT),
+                 ("Meso zebrane", "eq nie było otwarte" if meso is None else f"+{fmt(meso)}", GOLD),
+                 ("Poty", f"-{fmt(cost)}" if cost else "0", RED),
+                 ("Netto", "—" if net is None else ("+" if net >= 0 else "") + fmt(net),
+                  LABEL if net is None else GREEN if net >= 0 else RED)]
+        rh = round(17 * sc)
+        for lab, val, col in lines:
+            c.create_text(pad, y + rh / 2, text=lab, font=self.f("semi", 8.5), fill=LABEL, anchor="w")
+            c.create_text(w - pad, y + rh / 2, text=val, font=self.f("bold", 10 if lab == "Netto" else 9), fill=col,
+                          anchor="e")
+            y += rh
+        used = [(n, k) for n, k in sm["used"].items() if k]
+        if used:
+            y += round(4 * sc)
+            x = pad
+            ih = round(20 * sc)
+            for n, k in used:
+                ic = self.icon(n, ih)
+                tw = round(28 * sc) + len(str(k)) * round(6 * sc)
+                if x + tw > w - pad:
+                    x, y = pad, y + ih + round(4 * sc)
+                if ic:
+                    c.create_image(x + ih / 2, y + ih / 2, image=ic)
+                else:
+                    c.create_text(x, y + ih / 2, text=n[:3], font=self.f("semi", 8), fill=TEXT, anchor="w")
+                c.create_text(x + ih + round(2 * sc), y + ih / 2, text=f"×{k}", font=self.f("semi", 8.5), fill=TEXT,
+                              anchor="w")
+                x += tw
+            y += ih
+        foot = ("Zapisano w sesje.csv" if sm["saved"] else "Za krótko, nie zapisano") + " · kliknij, aby zamknąć"
+        tid = c.create_text(pad, y + round(6 * sc), text=foot, font=self.f("reg", 7.5), fill=LABEL, anchor="nw",
+                            width=w - 2 * pad)
+        h = int(c.bbox(tid)[3] + 8 * sc)
+        self.header(c, w, hh, "KONIEC GRINDU")
+        c.create_text(w - 8 * sc, hh / 2, text=fmt_clock(sm["el"]), font=self.f("semi", 8.5), fill=HEAD_TEXT,
+                      anchor="e")
+        c.create_rectangle(0, 0, w - 1, h - 1, outline=BORDER)
+        p.place(lx, ly - h - round(4 * sc), w, h)
         c.tag_raise("all")
 
     def toggle_details(self):
@@ -869,6 +1092,7 @@ class HUD:
         if self.engine:
             e = self.engine
             e.map_row()
+            e.session_row()
             e._summary(self.potki)
             self.engine.log("=== koniec")
             self.engine.stop.set()
