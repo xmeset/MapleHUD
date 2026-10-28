@@ -1,0 +1,11 @@
+mss==10.2.0
+numpy==2.5.4
+opencv-python-headless==4.14.0.94
+pillow==13.0.0
+winrt-runtime==4.0.3
+winrt-Windows.Foundation==4!10.0.28000.2705
+winrt-Windows.Foundation.Collections==4!10.0.28000.2705
+winrt-Windows.Globalization==4!10.0.28000.2705
+winrt-Windows.Graphics.Imaging==4!10.0.28000.2705
+winrt-Windows.Media.Ocr==4!10.0.28000.2705
+winrt-Windows.Storage.Streams==4!10.0.28000.2705

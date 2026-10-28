@@ -1,0 +1,4 @@
+MapleHUD
+Copyright (c) 2026 tesem. Wszelkie prawa zastrzezone.
+
+Program zawiera komponenty open source na licencji MIT - ich licencje sa w pliku THIRD-PARTY-LICENSES.txt.

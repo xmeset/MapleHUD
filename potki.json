@@ -1,0 +1,59 @@
+{
+  "_info": "uzywane: poty, ktore liczy (ze skokow HP/MP). hp/mp: ile przywraca (liczba albo \"35%\"). cena: za sztuke, null = cena NPC. tolerancja_spadek: o ile skok moze byc mniejszy (trafienie, koszt skilla w tej samej chwili). tolerancja_regen: o ile wiekszy (regen). Po zmianie: PPM > Wczytaj potki.json.",
+  "uzywane": [
+    "Red Potion",
+    "Orange Potion",
+    "Meat",
+    "Lemon",
+    "Blue Potion"
+  ],
+  "tolerancja_spadek": 45,
+  "tolerancja_regen": 15,
+  "potki": {
+    "Red Potion": {
+      "hp": 100,
+      "mp": 0,
+      "cena": null
+    },
+    "Orange Potion": {
+      "hp": 250,
+      "mp": 0,
+      "cena": null
+    },
+    "White Potion": {
+      "hp": 500,
+      "mp": 0,
+      "cena": null
+    },
+    "Blue Potion": {
+      "hp": 0,
+      "mp": 200,
+      "cena": null
+    },
+    "Elixir": {
+      "hp": "35%",
+      "mp": "35%",
+      "cena": null
+    },
+    "Power Elixir": {
+      "hp": "100%",
+      "mp": "100%",
+      "cena": null
+    },
+    "Mana Elixir": {
+      "hp": 0,
+      "mp": "50%",
+      "cena": null
+    },
+    "Meat": {
+      "hp": 160,
+      "mp": 0,
+      "cena": null
+    },
+    "Lemon": {
+      "hp": 0,
+      "mp": 150,
+      "cena": null
+    }
+  }
+}

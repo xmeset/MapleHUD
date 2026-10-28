@@ -1,0 +1,31 @@
+MapleHUD - overlay do MapleStory Classic World
+================================================
+
+Co pokazuje (dwa male panele po bokach dolnego paska gry):
+  lewy:  LV, mapa, EXP/h, EXP/h z ostatnich 5 min, czas do nastepnego levelu
+  prawy: meso/h, koszt potow/h, netto/h (strzalka ^ = lista potow)
+
+Jak uruchomic:
+  1. Rozpakuj caly folder (prawy klik na zip > Wyodrebnij wszystkie).
+  2. Wlacz gre (najlepiej w oknie lub bez ramki).
+  3. Odpal MapleHUD.exe.
+  Windows moze pokazac "System Windows ochronil komputer" - kliknij
+  "Wiecej informacji" > "Uruchom mimo to" (program nie jest podpisany).
+
+Skad bierze dane (tylko zrzuty ekranu, nic nie zmienia w grze):
+  EXP   - pasek EXP na dole gry
+  meso  - licznik meso w ekwipunku: otworz eq na start i co jakis czas
+  poty  - skoki HP/MP na pasku (dziala tez z potami od peta)
+  mapa  - nazwa z minimapy (minimapa musi byc otwarta)
+
+Ustawienia:
+  potki.json - ktore poty liczyc ("uzywane"), ile daja HP/MP i ich ceny.
+               Po zmianie: prawy klik na panelu > Wczytaj potki.json.
+  Prawy klik na panelu: start/pauza, reset, przezroczystosc, zamknij.
+
+Wyniki zapisuja sie w folderze data:
+  mapy.csv  - EXP/h, meso/h, koszt potow, netto per mapa (otworz w Excelu)
+  sesja.log - szczegolowy log (przydatny, gdy cos nie dziala)
+
+MapleHUD (c) 2026 tesem
+Licencje uzytych komponentow open source: THIRD-PARTY-LICENSES.txt
