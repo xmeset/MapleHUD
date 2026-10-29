@@ -50,6 +50,7 @@ HPMP_POLL = 0.25
 SESJA = DATA / "sesja.log"
 MAPY = DATA / "mapy.csv"
 SESJE = DATA / "sesje.csv"
+IDLE_GAP = 300
 CSV_HEAD = ["data", "start", "koniec", "minuty", "lv", "exp", "exp_h", "proc_lv_h", "meso", "poty_koszt", "netto", "poty"]
 MIN_MAP_ROW = 120
 SUMMARY_EVERY = 30
@@ -146,6 +147,9 @@ class Potki:
     def __init__(self):
         table = load_json(m.ASSETS / "potion_table.json", {"items": []})
         self.npc = {i["name"]: i for i in table["items"]}
+        heal = load_json(BUNDLE / "pety.json", {})
+        self.heal = {p["name"]: p for p in heal.get("poty") or []}
+        self.pets = [p["name"] for p in heal.get("pety") or []]
         cfg = load_json(POTKI, {})
         self.items = {k: v for k, v in (cfg.get("potki") or {}).items() if isinstance(v, dict)}
         self.in_use = [n for n in cfg.get("uzywane") or [] if isinstance(n, str)]
@@ -153,24 +157,30 @@ class Potki:
         self.down, self.up = num("tolerancja_spadek", 45), num("tolerancja_regen", 15)
         self.mult = {"hp": num("mnoznik_hp", 1), "mp": num("mnoznik_mp", 1)}
         self.skill_heals = cfg.get("pomijaj_leczenie_skilli", True) is not False
+        pet = lambda k: cfg.get(k) if isinstance(cfg.get(k), str) else None
+        self.pet = {"hp": pet("pet_hp"), "mp": pet("pet_mp")}
 
     def price(self, name):
         p = self.items.get(name, {}).get("cena")
         if isinstance(p, (int, float)) and p >= 0:
             return p
+        if name in self.heal:
+            return self.heal[name].get("cena", 0) or 0
         return self.npc.get(name, {}).get("price", 0) or 0
 
     def stats(self, name):
-        it = self.items.get(name, {})
+        it = self.items.get(name) or self.heal.get(name, {})
         boost = lambda k: it.get(k) * self.mult[k] if isinstance(it.get(k), (int, float)) else it.get(k)
         return boost("hp"), boost("mp")
 
-    def counter(self):
-        pots = []
-        for n in self.in_use:
-            hp, mp = self.stats(n)
-            pots.append(dict(name=n, hp=hp, mp=mp))
-        return PotCounter(pots, self.down, self.up, self.skill_heals)
+    def potion(self, name):
+        hp, mp = self.stats(name)
+        return dict(name=name, hp=hp, mp=mp)
+
+    def counter(self, pet=None):
+        pet = {**self.pet, **(pet or {})}
+        names = dict.fromkeys(self.in_use + [n for n in pet.values() if n])
+        return PotCounter([self.potion(n) for n in names], self.down, self.up, self.skill_heals, pet)
 
 
 class HudReader(m.ScreenReader):
@@ -203,7 +213,7 @@ class Engine:
         saved = cfg.get("mesos_box")
         if isinstance(saved, list) and len(saved) == 6:
             self.reader.saved_mesos = tuple(saved)
-        self.session = m.Session(cfg.get("gap_seconds", 15))
+        self.session = m.Session(IDLE_GAP)
         self.t = self.session.exp
         self.meso = MesoCounter()
         self.bar = potions.PotionTracker()
@@ -235,15 +245,17 @@ class Engine:
         threading.Thread(target=self._hpmp_worker, daemon=True).start()
 
     def log(self, msg):
-        if self._logf:
+        if getattr(self, "_logf", None):
             try:
                 self._logf.write(f"{time.strftime('%H:%M:%S')} {msg}\n")
             except Exception:
                 pass
 
     def set_counter(self, potki, used=None):
-        self.counter = potki.counter()
+        self.counter = potki.counter({k: self.cfg[f"pet_{k}"] for k in ("hp", "mp") if f"pet_{k}" in self.cfg})
         self.counter.on_jump = self._on_jump
+        self.counter.bar = self.bar_counts
+        self.counter.on_note = self.log
         if used:
             self.counter.used = used
 
@@ -503,7 +515,13 @@ class Engine:
                 if n not in self.bar_names:
                     self.bar_names.add(n)
                     self.bar.used.setdefault(n, 0)
+        before = dict(self.bar.used)
         self.bar.observe(slots, self.counting())
+        now = time.monotonic()
+        for n, c in self.bar.used.items():
+            for _ in range(c - before.get(n, 0)):
+                if self.counter.bar_used(n, now):
+                    self.log(f"quickslot {n}: poprzedni skok to {n} (pet)")
 
     def toggle(self):
         if self.session.on:
@@ -554,7 +572,8 @@ class Engine:
         rows, hp_h, mp_h = [], 0.0, 0.0
         hpm = self.hpmp[0][1] if self.hpmp else 0
         mpm = self.hpmp[1][1] if self.hpmp else 0
-        for name in list(dict.fromkeys(potki.in_use + list(used))):
+        pets = [n for n in (self.counter.pet("hp"), self.counter.pet("mp")) if n]
+        for name in list(dict.fromkeys(potki.in_use + pets + list(used))):
             n = used.get(name, 0)
             per_h = n / el * 3600 if el >= 30 else None
             hp, mp = potki.stats(name)
@@ -563,6 +582,7 @@ class Engine:
                 mp_h += amount(mp, mpm) * per_h
             rows.append(dict(name=name, used=n, per_h=per_h, cost=n * potki.price(name), hp=hp, mp=mp,
                              price=potki.price(name), bar=name in self.bar_names,
+                             pet=name in (self.counter.pet("hp"), self.counter.pet("mp")),
                              jumps=self.counter.used.get(name, 0)))
         state = "on" if t.running else "wait" if s.on else "off"
         if t.exp is None:
@@ -590,8 +610,8 @@ def demo_snapshot():
                 pct_h=15.0, exp_5=46100,
                 meso_h=312400, meso_seen=True, cost=7350, cost_h=9757, net_h=302643, rows=[
                     dict(name="Red Potion", used=41, per_h=54.4, cost=2050, hp=100, mp=0, price=50),
-                    dict(name="Meat", used=12, per_h=15.9, cost=960, hp=160, mp=0, price=80),
-                    dict(name="Lemon", used=19, per_h=25.2, cost=2850, hp=0, mp=150, price=150),
+                    dict(name="Meat", used=12, per_h=15.9, cost=960, hp=160, mp=0, price=80, pet=True),
+                    dict(name="Lemon", used=19, per_h=25.2, cost=2850, hp=0, mp=150, price=150, pet=True, bar=True),
                     dict(name="Blue Potion", used=0, per_h=0, cost=0, hp=0, mp=200, price=220)],
                 hp_h=7950, mp_h=3720, status="", flash=False, estimated=False, waiting=None, on=True,
                 hpmp=((612, 829), (431, 657)), counting=True, last=(3.2, ["Red Potion"]))
@@ -618,13 +638,17 @@ class Panel:
     def _hit(self, e):
         for item in reversed(self.c.find_overlapping(e.x - 1, e.y - 1, e.x + 1, e.y + 1)):
             for tag in self.c.gettags(item):
-                if tag in self.actions:
+                if tag in self.actions or tag.startswith("pet"):
                     return tag
         return None
 
     def _click(self, e):
         tag = self._hit(e)
-        if tag:
+        if tag == "petpick":
+            self.hud.pet_menu(None, e)
+        elif tag and tag.startswith("petsel:"):
+            self.hud.pet_menu(tag[7:], e)
+        elif tag:
             self.actions[tag]()
 
     def _hover(self, e):
@@ -652,10 +676,168 @@ def font_px(name, px):
     return (name, -max(7, round(px)))
 
 
+class Picker:
+    """A list to choose from (icon, name, a line under it), styled like the panels: type to filter,
+    scroll with the wheel or the bar on the right, click to choose. Closes when it loses focus."""
+
+    def __init__(self, hud, title, items, cur, pick, x, y):
+        self.hud, self.items, self.cur, self.pick = hud, items, cur, pick
+        sc = self.sc = hud.scale
+        self.w, self.rh = round(250 * sc), round(32 * sc)
+        self.win = w = tk.Toplevel(hud.root)
+        w.overrideredirect(True)
+        w.attributes("-topmost", True)
+        w.configure(bg=BORDER)
+        hh = round(22 * sc)
+        head = tk.Canvas(w, width=self.w, height=hh, bg=BODY, highlightthickness=0, bd=0)
+        head.pack(padx=1, pady=(1, 0))
+        hud.header(head, self.w, hh, title)
+        head.create_text(self.w - 9 * sc, hh / 2, text="✕", font=hud.f("semi", 9), fill=HEAD_TEXT, anchor="e",
+                         tags=("x",))
+        head.tag_bind("x", "<Button-1>", lambda e: self.close())
+        box = tk.Frame(w, bg=BODY)
+        box.pack(fill="x", padx=1)
+        self.q = tk.StringVar()
+        self.entry = tk.Entry(box, textvariable=self.q, font=hud.f("reg", 9), bg=CARD, fg=TEXT, relief="flat",
+                              insertbackground=TEXT, highlightthickness=1, highlightbackground=mix(BODY, BORDER, 0.6),
+                              highlightcolor=ORANGE)
+        self.entry.pack(fill="x", padx=round(6 * sc), pady=round(6 * sc), ipady=round(3 * sc))
+        self.hint = tk.Label(box, text="szukaj…", font=hud.f("reg", 9), bg=CARD, fg=LABEL)
+        self.hint.place(in_=self.entry, x=round(4 * sc), rely=0.5, anchor="w")
+        self.hint.bind("<Button-1>", lambda e: self.entry.focus_set())
+        body = tk.Frame(w, bg=BODY)
+        body.pack(padx=1, pady=(0, 1))
+        self.lh = min(len(items), 9) * self.rh + round(4 * sc)
+        self.c = tk.Canvas(body, width=self.w - round(10 * sc), height=self.lh, bg=BODY, highlightthickness=0, bd=0)
+        self.c.pack(side="left")
+        self.bar = tk.Canvas(body, width=round(10 * sc), height=self.lh, bg=BODY, highlightthickness=0, bd=0)
+        self.bar.pack(side="left")
+        self.shown, self.hover = [], None
+        self.q.trace_add("write", lambda *a: self.fill())
+        for wd in (self.c, self.bar, self.entry):
+            wd.bind("<MouseWheel>", self.wheel)
+        self.c.bind("<Motion>", self.move)
+        self.c.bind("<Leave>", lambda e: self.set_hover(None))
+        self.c.bind("<ButtonRelease-1>", self.click)
+        self.bar.bind("<Button-1>", self.drag)
+        self.bar.bind("<B1-Motion>", self.drag)
+        self.entry.bind("<Escape>", lambda e: self.close())
+        self.entry.bind("<Return>", lambda e: self.choose(0) if self.shown else None)
+        self.entry.bind("<FocusOut>", lambda e: w.after(80, self.check_focus))
+        self.fill()
+        w.update_idletasks()
+        sw, sh = w.winfo_screenwidth(), w.winfo_screenheight()
+        x = max(0, min(x, sw - w.winfo_reqwidth()))
+        y = max(0, min(y, sh - w.winfo_reqheight() - 40))
+        w.geometry(f"+{int(x)}+{int(y)}")
+        self.entry.focus_force()
+        if cur in [i[0] for i in items]:
+            i = [i[0] for i in items].index(cur)
+            self.c.yview_moveto(max(0, (i - 3) * self.rh / max(1, len(items) * self.rh)))
+        w.after(30, self.draw_bar)
+
+    def fill(self):
+        q = self.q.get().strip().lower()
+        self.hint.place_forget() if q else self.hint.place(in_=self.entry, x=round(4 * self.sc), rely=0.5,
+                                                            anchor="w")
+        self.shown = [it for it in self.items if not q or q in (it[0] or "brak").lower()]
+        self.hover = None
+        self.draw()
+        self.c.yview_moveto(0)
+        self.draw_bar()
+
+    def draw(self):
+        c, sc, rh, hud = self.c, self.sc, self.rh, self.hud
+        c.delete("all")
+        w = int(c.cget("width"))
+        for i, (name, icon, sub) in enumerate(self.shown):
+            y = round(2 * sc) + i * rh
+            on, hov = name == self.cur, i == self.hover
+            fill = mix(CARD, ORANGE, 0.16) if on else mix(CARD, HEAD_TOP, 0.55) if hov else CARD
+            rrect(c, 4 * sc, y + 1, w - 2 * sc, y + rh - 2, round(5 * sc), fill=fill,
+                  outline=ORANGE if on else mix(BODY, BORDER, 0.5 if hov else 0.25))
+            ic = hud.icon(icon, 22 * sc) if icon else None
+            if ic:
+                c.create_image(19 * sc, y + rh / 2, image=ic)
+            label_y = y + (rh / 2 if not sub else 11 * sc)
+            c.create_text(36 * sc, label_y, text=name if name else "brak", font=hud.f("semi", 9),
+                          fill=TEXT if name else LABEL, anchor="w")
+            if sub:
+                c.create_text(36 * sc, y + 22 * sc, text=sub, font=hud.f("reg", 7.5), fill=LABEL, anchor="w")
+            if on:
+                c.create_text(w - 10 * sc, y + rh / 2, text="✓", font=hud.f("bold", 10), fill=ORANGE, anchor="e")
+        if not self.shown:
+            c.create_text(w / 2, self.lh / 2, text="nic nie pasuje", font=hud.f("reg", 9), fill=LABEL)
+        c.configure(scrollregion=(0, 0, w, max(self.lh, round(4 * sc) + len(self.shown) * rh)))
+
+    def draw_bar(self):
+        b, sc = self.bar, self.sc
+        b.delete("all")
+        top, bot = self.c.yview()
+        if bot - top >= 0.999:
+            return
+        h = self.lh
+        x0, x1 = 3 * sc, 7 * sc
+        rrect(b, x0, 2, x1, h - 2, round(2 * sc), fill=mix(BODY, BORDER, 0.25), outline="")
+        rrect(b, x0, 2 + top * (h - 4), x1, 2 + bot * (h - 4), round(2 * sc), fill=mix(BORDER, ORANGE, 0.5),
+              outline="")
+
+    def wheel(self, e):
+        self.c.yview_scroll(-1 if e.delta > 0 else 1, "units")
+        self.c.configure(yscrollincrement=self.rh)
+        self.draw_bar()
+        self.move(e) if e.widget is self.c else None
+
+    def drag(self, e):
+        top, bot = self.c.yview()
+        self.c.yview_moveto(max(0.0, e.y / self.lh - (bot - top) / 2))
+        self.draw_bar()
+
+    def index(self, e):
+        i = int((self.c.canvasy(e.y) - 2 * self.sc) // self.rh)
+        return i if 0 <= i < len(self.shown) else None
+
+    def move(self, e):
+        self.set_hover(self.index(e))
+
+    def set_hover(self, i):
+        if i != self.hover:
+            self.hover = i
+            self.c.configure(cursor="hand2" if i is not None else "")
+            self.draw()
+
+    def click(self, e):
+        i = self.index(e)
+        if i is not None:
+            self.choose(i)
+
+    def choose(self, i):
+        name = self.shown[i][0]
+        self.close()
+        self.pick(name)
+
+    def check_focus(self):
+        try:
+            f = self.win.focus_get()
+        except (KeyError, tk.TclError):
+            f = None
+        if f is None or not str(f).startswith(str(self.win)):
+            self.close()
+
+    def close(self):
+        if self.hud.picker is self:
+            self.hud.picker = None
+        try:
+            self.win.destroy()
+        except tk.TclError:
+            pass
+
+
 class HUD:
     def __init__(self, root, demo=False):
         self.root, self.demo = root, demo
-        self.cfg = {"alpha": 0.95, "gap_seconds": 15, "level": None, **load_json(CONFIG, {})}
+        self.cfg = {"alpha": 0.95, "level": None, **load_json(CONFIG, {})}
+        self.cfg.pop("gap_seconds", None)
         self.potki = Potki()
         self.engine = None if demo else Engine(self.cfg, self.potki)
         if self.engine:
@@ -678,6 +860,7 @@ class HUD:
         self.summ.c.bind("<ButtonRelease-1>", lambda e: self.hide_summary())
         self.summary = None
         self.icons = {}
+        self.picker = None
         self.visible = True
         self.game_seen = None
         self.scale = 1.0
@@ -688,6 +871,10 @@ class HUD:
         self.menu.add_command(label="Koniec grindu (podsumowanie)", command=self.finish)
         self.menu.add_command(label="Reset sesji", command=self.reset)
         self.menu.add_command(label="Szczegóły potów", command=self.toggle_details)
+        self.pet_menus = {}
+        for k, lab in (("hp", "Pet: pot HP"), ("mp", "Pet: pot MP")):
+            self.pet_menus[k] = tk.Menu(self.menu, tearoff=0)
+            self.menu.add_cascade(label=lab, menu=self.pet_menus[k])
         self.menu.add_separator()
         self.menu.add_command(label="Edytuj potki.json (ceny, HP/MP, używane)", command=lambda: os.startfile(POTKI))
         self.menu.add_command(label="Wczytaj potki.json", command=self.reload_potki)
@@ -895,7 +1082,7 @@ class HUD:
     def draw_details(self, s):
         p, c, sc = self.details, self.details.c, self.scale
         w = self.geom[2]
-        rows = [r for r in s["rows"] if r["used"] or r["name"] in self.potki.in_use]
+        rows = [r for r in s["rows"] if r["used"] or r.get("pet") or r["name"] in self.potki.in_use]
         rh = round(30 * sc)
         msgs = []
         if s["status"]:
@@ -909,7 +1096,8 @@ class HUD:
             msgs.append(f"Ostatnio: {' + '.join(names)} ({fmt_time(ago)} temu)")
         hh = round(18 * sc)
         c.delete("all")
-        y = hh + round(18 * sc)
+        cy, ch = hh + round(5 * sc), round(40 * sc)
+        y = cy + ch + round(18 * sc)
         y_rows = y
         y += len(rows) * (rh + round(3 * sc))
         tid = c.create_text(round(9 * sc), y + 4 * sc, text="\n".join(msgs), font=self.f("reg", 8), fill=LABEL,
@@ -922,10 +1110,11 @@ class HUD:
             (hp, hpm), (mp, mpm) = s["hpmp"]
             hpmp_txt = f"HP {hp}/{hpm} · MP {mp}/{mpm}"
         c.create_text(w - 8 * sc, hh / 2, text=hpmp_txt, font=self.f("semi", 8), fill=HEAD_TEXT, anchor="e")
-        cx_used, cx_h = w * 0.58, w * 0.76
-        c.create_text(cx_used, hh + 9 * sc, text="UŻYTE", font=self.f("semi", 7.5), fill=LABEL, anchor="e")
-        c.create_text(cx_h, hh + 9 * sc, text="NA HR", font=self.f("semi", 7.5), fill=LABEL, anchor="e")
-        c.create_text(w - 10 * sc, hh + 9 * sc, text="KOSZT", font=self.f("semi", 7.5), fill=LABEL, anchor="e")
+        self.draw_pet(c, w, cy, ch)
+        cx_used, cx_h, hy = w * 0.58, w * 0.76, cy + ch + 9 * sc
+        c.create_text(cx_used, hy, text="UŻYTE", font=self.f("semi", 7.5), fill=LABEL, anchor="e")
+        c.create_text(cx_h, hy, text="NA HR", font=self.f("semi", 7.5), fill=LABEL, anchor="e")
+        c.create_text(w - 10 * sc, hy, text="KOSZT", font=self.f("semi", 7.5), fill=LABEL, anchor="e")
         y = y_rows
         for r in rows:
             hp, mp = r["hp"], r["mp"]
@@ -938,7 +1127,8 @@ class HUD:
                 c.create_oval(16 * sc, y + rh / 2 - 4 * sc, 24 * sc, y + rh / 2 + 4 * sc, fill=col, outline="")
             c.create_text(36 * sc, y + 11 * sc, text=r["name"], font=self.f("semi", 9), fill=TEXT, anchor="w")
             info = " · ".join(x for x in (f"{hp} HP" if hp else "", f"{mp} MP" if mp else "",
-                                          f"{fmt(r['price'])} meso", "quickslot" if r.get("bar") else "") if x)
+                                          f"{fmt(r['price'])} meso", "quickslot" if r.get("bar") else "",
+                                          "pet" if r.get("pet") else "") if x)
             c.create_text(36 * sc, y + 22 * sc, text=info, font=self.f("reg", 7.5), fill=LABEL, anchor="w")
             c.create_text(cx_used, y + rh / 2, text=f"×{r['used']}", font=self.f("semi", 9), fill=TEXT, anchor="e")
             c.create_text(cx_h, y + rh / 2, text=fmt(r["per_h"]) if r["per_h"] else "—", font=self.f("semi", 9),
@@ -950,6 +1140,78 @@ class HUD:
         rx, ry, pw, ph = self.geom
         p.place(rx, ry - h - round(4 * sc), w, h)
         c.tag_raise("all")
+
+    def pet_pot(self, k):
+        if self.engine:
+            return self.engine.counter.pet(k)
+        return self.cfg.get(f"pet_{k}", self.potki.pet[k])
+
+    def draw_pet(self, c, w, y, h):
+        sc = self.scale
+        rrect(c, 6 * sc, y, w - 6 * sc, y + h, round(6 * sc), fill=CARD, outline=mix(BODY, BORDER, 0.7))
+        name = self.cfg.get("pet")
+        x1 = w * 0.36
+        tag = ("petpick",)
+        rrect(c, 9 * sc, y + 4 * sc, x1, y + h - 4 * sc, round(5 * sc), fill=BODY,
+              outline=mix(BODY, BORDER, 0.5), tags=tag)
+        ic = self.icon("pety/" + name, 28 * sc) if name else None
+        if ic:
+            c.create_image(26 * sc, y + h / 2, image=ic, tags=tag)
+        else:
+            c.create_text(26 * sc, y + h / 2, text="?", font=self.f("xbold", 13), fill=LABEL, tags=tag)
+        c.create_text(44 * sc, y + 12 * sc, text="PET", font=self.f("semi", 7), fill=LABEL, anchor="w", tags=tag)
+        label = name or "wybierz"
+        room = int((x1 - 44 * sc - 12 * sc) / (5.6 * sc))
+        if len(label) > room:
+            label = label[:max(3, room - 1)] + "…"
+        c.create_text(44 * sc, y + 26 * sc, text=label, font=self.f("semi", 8.5), fill=TEXT if name else ORANGE,
+                      anchor="w", tags=tag)
+        c.create_text(x1 - 5 * sc, y + 26 * sc, text="▾", font=self.f("semi", 8), fill=LABEL, anchor="e", tags=tag)
+        span = (w - 10 * sc - x1) / 2
+        for i, k in enumerate(("hp", "mp")):
+            a, b = x1 + 4 * sc + i * span, x1 + (i + 1) * span
+            tag = ("petsel:" + k,)
+            pot = self.pet_pot(k)
+            rrect(c, a, y + 4 * sc, b, y + h - 4 * sc, round(5 * sc), fill=BODY,
+                  outline=mix(BODY, BORDER, 0.5), tags=tag)
+            c.create_text(a + 6 * sc, y + 12 * sc, text=f"POT {k.upper()}", font=self.f("semi", 7),
+                          fill=RED if k == "hp" else BLUE, anchor="w", tags=tag)
+            pic = self.icon(pot, 16 * sc) if pot else None
+            tx = a + 6 * sc
+            if pic:
+                c.create_image(a + 14 * sc, y + 26 * sc, image=pic, tags=tag)
+                tx = a + 25 * sc
+            label = pot or "brak"
+            room = int((b - tx - 14 * sc) / (5.6 * sc))
+            if len(label) > room:
+                label = label[:max(3, room - 1)] + "…"
+            c.create_text(tx, y + 26 * sc, text=label, font=self.f("semi", 8.5), fill=TEXT if pot else LABEL,
+                          anchor="w", tags=tag)
+            c.create_text(b - 5 * sc, y + 26 * sc, text="▾", font=self.f("semi", 8), fill=LABEL, anchor="e",
+                          tags=tag)
+
+    def pet_menu(self, k, e):
+        if self.picker:
+            self.picker.close()
+        if k is None:
+            items = [(None, None, "bez peta")] + [(n, "pety/" + n, "") for n in self.potki.pets]
+            cur, pick, title = self.cfg.get("pet"), self.set_pet_animal, "TWÓJ PET"
+        else:
+            items = [(None, None, "pet nie pije nic")]
+            for n, p in self.potki.heal.items():
+                if p.get(k):
+                    hp, mp = self.potki.stats(n)
+                    price = self.potki.price(n)
+                    sub = " · ".join(x for x in (f"{hp} HP" if hp else "", f"{mp} MP" if mp else "",
+                                                 f"{fmt(price)} meso" if price else "nie do kupienia") if x)
+                    items.append((n, n, sub))
+            cur, title = self.pet_pot(k), f"POT {k.upper()} PETA"
+            pick = lambda n, k=k: self.set_pet(k, n)
+        self.picker = Picker(self, title, items, cur, pick, e.x_root - 40 * self.scale, e.y_root + 14 * self.scale)
+
+    def set_pet_animal(self, name):
+        self.cfg["pet"] = name
+        self.save()
 
     def icon(self, name, px):
         px = max(12, round(px))
@@ -1049,7 +1311,20 @@ class HUD:
             self.details.win.withdraw()
 
     def menu_at(self, e):
+        for i, (k, sub) in enumerate(self.pet_menus.items()):
+            sub.delete(0, "end")
+            cur = self.engine.counter.pet(k) if self.engine else self.cfg.get(f"pet_{k}")
+            for n in [None] + [n for n in self.potki.in_use if self.potki.stats(n)[i]]:
+                sub.add_command(label=("● " if n == cur else "    ") + (n or "brak (nie liczę)"),
+                                command=lambda k=k, n=n: self.set_pet(k, n))
         self.menu.tk_popup(e.x_root, e.y_root)
+
+    def set_pet(self, k, name):
+        self.cfg[f"pet_{k}"] = name
+        self.save()
+        if self.engine:
+            self.engine.counter.set_pet(k, name, self.potki.potion(name) if name else None)
+            self.engine.log(f"pet {k.upper()}: {name or 'brak'} (wybrane w menu)")
 
     def toggle(self):
         if self.engine:

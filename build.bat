@@ -7,7 +7,7 @@ if not exist ".venv\Scripts\python.exe" (
 ".venv\Scripts\python.exe" -m pip install -q pyinstaller || exit /b 1
 ".venv\Scripts\python.exe" -m PyInstaller --noconfirm --clean --windowed --name MapleHUD --icon MapleHUD.ico ^
   --paths engine --collect-all winrt ^
-  --add-data "engine\assets;assets" --add-data "potki.json;." --add-data "MapleHUD.ico;." --add-data "ikony;ikony" ^
+  --add-data "engine\assets;assets" --add-data "potki.json;." --add-data "MapleHUD.ico;." --add-data "ikony;ikony" --add-data "pety.json;." ^
   maple_hud.py || exit /b 1
 copy /y potki.json dist\MapleHUD\potki.json >nul
 copy /y CZYTAJ.txt dist\MapleHUD\CZYTAJ.txt >nul

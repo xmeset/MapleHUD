@@ -1,0 +1,234 @@
+{
+"_info": "Poty/jedzenie leczace HP/MP i pety. Dane: OSMS Data Explorer (https://osmsdataexplorer.com), CC BY 4.0. Nazwy i grafiki (c) Nexon. Poty: tylko te ze sklepow NPC (cena) i z dropow (cena 0), wg NiaMeowDB.",
+"poty": [
+{
+"name": "Red Potion",
+"id": 2000000,
+"hp": 100,
+"mp": 0,
+"cena": 50
+},
+{
+"name": "Orange Potion",
+"id": 2000001,
+"hp": 250,
+"mp": 0,
+"cena": 150
+},
+{
+"name": "White Potion",
+"id": 2000002,
+"hp": 500,
+"mp": 0,
+"cena": 350
+},
+{
+"name": "Blue Potion",
+"id": 2000003,
+"hp": 0,
+"mp": 200,
+"cena": 220
+},
+{
+"name": "Elixir",
+"id": 2000004,
+"hp": "35%",
+"mp": "35%",
+"cena": 0
+},
+{
+"name": "Power Elixir",
+"id": 2000005,
+"hp": "100%",
+"mp": "100%",
+"cena": 0
+},
+{
+"name": "Mana Elixir",
+"id": 2000006,
+"hp": 0,
+"mp": "50%",
+"cena": 0
+},
+{
+"name": "Apple",
+"id": 2010001,
+"hp": 40,
+"mp": 0,
+"cena": 20
+},
+{
+"name": "Egg",
+"id": 2010002,
+"hp": 60,
+"mp": 0,
+"cena": 30
+},
+{
+"name": "Meat",
+"id": 2010003,
+"hp": 160,
+"mp": 0,
+"cena": 80
+},
+{
+"name": "Orange",
+"id": 2010004,
+"hp": 0,
+"mp": 50,
+"cena": 50
+},
+{
+"name": "Lemon",
+"id": 2010005,
+"hp": 0,
+"mp": 150,
+"cena": 150
+},
+{
+"name": "Watermelon",
+"id": 2010006,
+"hp": 800,
+"mp": 800,
+"cena": 1920
+},
+{
+"name": "Green Apple",
+"id": 2010007,
+"hp": 0,
+"mp": 30,
+"cena": 0
+},
+{
+"name": "Salad",
+"id": 2020000,
+"hp": 0,
+"mp": 200,
+"cena": 220
+},
+{
+"name": "Fried Chicken",
+"id": 2020001,
+"hp": 120,
+"mp": 0,
+"cena": 60
+},
+{
+"name": "Cake",
+"id": 2020002,
+"hp": 100,
+"mp": 100,
+"cena": 150
+},
+{
+"name": "Pizza",
+"id": 2020003,
+"hp": 360,
+"mp": 0,
+"cena": 252
+},
+{
+"name": "Hamburger",
+"id": 2020004,
+"hp": 500,
+"mp": 0,
+"cena": 350
+},
+{
+"name": "Hot Dog",
+"id": 2020005,
+"hp": 300,
+"mp": 0,
+"cena": 180
+},
+{
+"name": "Hot Dog Supreme",
+"id": 2020006,
+"hp": 600,
+"mp": 0,
+"cena": 480
+},
+{
+"name": "Dried Squid",
+"id": 2020007,
+"hp": 300,
+"mp": 0,
+"cena": 180
+},
+{
+"name": "Orange Juice",
+"id": 2020009,
+"hp": 0,
+"mp": 450,
+"cena": 540
+},
+{
+"name": "Grape Juice",
+"id": 2020010,
+"hp": 0,
+"mp": 900,
+"cena": 1260
+},
+{
+"name": "Ice Cream Pop",
+"id": 2020012,
+"hp": 1500,
+"mp": 0,
+"cena": 1500
+},
+{
+"name": "Red Bean Sundae",
+"id": 2020013,
+"hp": 0,
+"mp": 1500,
+"cena": 2250
+},
+{
+"name": "Sunrise Dew",
+"id": 2020016,
+"hp": 0,
+"mp": 2000,
+"cena": 0
+},
+{
+"name": "Pure Water",
+"id": 2022000,
+"hp": 0,
+"mp": 800,
+"cena": 1120
+},
+{
+"name": "Unagi",
+"id": 2022003,
+"hp": 1000,
+"mp": 0,
+"cena": 1000
+}
+],
+"pety": [
+{
+"name": "Brown Kitty",
+"id": 5000000
+},
+{
+"name": "Brown Puppy",
+"id": 5000001
+},
+{
+"name": "Pink Bunny",
+"id": 5000002
+},
+{
+"name": "Black Kitty",
+"id": 5000004
+},
+{
+"name": "White Bunny",
+"id": 5000005
+},
+{
+"name": "Black Pig",
+"id": 5000007
+}
+]
+}

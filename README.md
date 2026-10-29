@@ -21,7 +21,7 @@ Nic nie trzeba instalować. Wymagany Windows 10 lub 11.
 |---|---|
 | **Lewy** | LV, mapa, pasek EXP, EXP/h i % levelu na godzinę, EXP/h z ostatnich 5 min, czas do następnego levelu, czas sesji |
 | **Prawy** | meso/h, koszt potów/h, netto/h (meso − poty) |
-| **▴ Poty** | lista potów z ikonkami: ile zużytych, ile na godzinę, koszt, aktualne HP/MP |
+| **▴ Poty** | Twój pet i co pije (HP/MP, wybór z listy), lista potów z ikonkami: ile zużytych, ile na godzinę, koszt, aktualne HP/MP |
 | **■ Koniec grindu** | podsumowanie: czas, mapy, EXP i % levelu, zebrane meso, koszt potów, netto. Zapisuje do `sesje.csv`. ▶ zaczyna nowy grind. |
 
 Panele same dopasowują się do rozmiaru okna gry (1366×768, 1920×1080 i inne) i chowają się, gdy gra nie jest na wierzchu. Po wyłączeniu gry MapleHUD zamyka się sam (po ok. 10 s).
@@ -37,11 +37,11 @@ MapleHUD tylko **robi zrzuty ekranu** i odczytuje z nich liczby, tak jak OBS alb
 | **Poty** | liczba sztuk na quickslocie (dokładne, także poty od peta), a dla potów spoza quickslota skoki HP/MP na pasku statusu, np. +100 HP = Red Potion. Leczenie ze skilli (HP w górę przy zużyciu many) nie jest liczone jako pot. |
 | **Mapa** | nazwa z minimapy (minimapa musi być otwarta) |
 
-Liczenie pauzuje się samo po 15 s bez EXP i rusza przy następnym EXP.
+Liczenie pauzuje się samo po 5 min bez EXP (AFK, dłuższa przerwa) i rusza przy następnym EXP; ten czas bez EXP nie jest liczony. Krótkie wyjście z okna gry, sklep czy etap PQ bez mobów nie zatrzymuje czasu.
 
 ## Ustawienia
 
-**Prawy klik na panelu**: start/pauza, koniec grindu, reset sesji, lista potów, przezroczystość, poziom (gdy pasek pokazuje tylko %), zamknij.
+**Prawy klik na panelu**: start/pauza, koniec grindu, reset sesji, lista potów, **Pet: pot HP / pot MP** (co pije pet), przezroczystość, poziom (gdy pasek pokazuje tylko %), zamknij.
 
 **`potki.json`** (obok MapleHUD.exe):
 
@@ -58,6 +58,7 @@ Liczenie pauzuje się samo po 15 s bez EXP i rusza przy następnym EXP.
 - `tolerancja_spadek` / `tolerancja_regen` – o ile skok może się różnić, gdy w tej samej chwili dostaniesz hita albo użyjesz skilla.
 - `mnoznik_hp` / `mnoznik_mp` – bonus klasy do potów, np. `1.5` dla warriora z Improved HP Recovery.
 - `pomijaj_leczenie_skilli` – `true`: skok HP przy zużyciu many to skill, nie pot.
+- `pet_hp` / `pet_mp` – co pije pet, np. `"Meat"` (`null` = brak peta). Wygodniej wybrać w panelu **▴ Poty** (pet, POT HP, POT MP). Pet pije w chwili trafienia, więc każdy wzrost HP do pełnej wartości pota liczy się jako jego pot. Gdy pot peta jest też na quickslocie, liczony jest dokładnie stamtąd. Regen (ten sam wzrost HP co 10 s, np. u warriora) jest pomijany.
 
 Po zmianie wybierz **prawy klik → Wczytaj potki.json**.
 
