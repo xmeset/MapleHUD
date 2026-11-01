@@ -55,7 +55,9 @@ MAPY = DATA / "mapy.csv"
 SESJE = DATA / "sesje.csv"
 IDLE_GAP = 600
 OTHER = {"Inne HP": "hp", "Inne MP": "mp"}
-CSV_HEAD = ["data", "start", "koniec", "minuty", "lv", "exp", "exp_h", "proc_lv_h", "meso", "poty_koszt", "netto", "poty"]
+CSV_HEAD = ["data", "start", "koniec", "minuty", "lv", "exp", "exp_h", "proc_lv_h", "meso", "poty_koszt", "netto", "poty",
+            "exp_h_15min"]
+BEST_SPAN = 15 * 60
 MIN_MAP_ROW = 120
 RETURN_GAP = 600
 TRANSIT = 300
@@ -134,20 +136,37 @@ def map_runs(rows, live=None):
         out.append(dict(name=re.sub(r"\s*<[^>]*>\s*$", "", r.get("mapa") or "").strip(), exp_h=exp_h or exp / hours,
                         hours=hours, pct_h=num(r.get("proc_lv_h")), lv=int(num(r.get("lv")) or 0) or None,
                         net_h=None if meso is None else (meso - (num(r.get("poty_koszt")) or 0)) / hours,
-                        date=r.get("data") or "", now=r is live))
+                        date=r.get("data") or "", now=r is live, best15=num(r.get("exp_h_15min") or "")))
     return out
+
+
+def best_window(hist, start, span=BEST_SPAN):
+    """The best EXP/h over any `span` seconds of play in `hist` [(elapsed, gained)] after `start` (elapsed, gained)."""
+    pts = [start] + [h for h in hist if h[0] > start[0]]
+    best, i = None, 0
+    for el, g in pts:
+        while i + 1 < len(pts) and pts[i + 1][0] <= el - span:
+            i += 1
+        e0, g0 = pts[i]
+        if el - e0 >= span:
+            rate = (g - g0) / (el - e0) * 3600
+            best = rate if best is None or rate > best else best
+    return best
 
 
 def best_runs(runs, min_hours):
     """The best run (EXP/h) of each map, from runs at least `min_hours` long, best first."""
-    best, count = {}, {}
+    best, count, top15 = {}, {}, {}
     for r in runs:
+        if r.get("best15") and r["best15"] > top15.get(r["name"], 0):
+            top15[r["name"]] = r["best15"]
         if r["hours"] >= min_hours:
             count[r["name"]] = count.get(r["name"], 0) + 1
             if r["name"] not in best or r["exp_h"] > best[r["name"]]["exp_h"]:
                 best[r["name"]] = r
     for name, r in best.items():
         r["runs"] = count[name]
+        r["top15"] = top15.get(name)
     return sorted(best.values(), key=lambda r: -r["exp_h"])
 
 
@@ -296,6 +315,7 @@ class Engine:
         self.set_counter(potki)
         self.potki_ref = potki
         self.maps_done = []
+        self.exp_hist = []
         self._start_segment()
         self.run = self.seg
         self.q = queue.Queue()
@@ -502,12 +522,14 @@ class Engine:
         exp_h = exp / el * 3600 if el > 0 else 0
         proc_h = exp_h / need * 100 if need else None
         used_txt = " ".join(f"{n} x{c}" for n, c in used.items())
+        best15 = best_window(self.exp_hist, (g["el"], g["gained"]))
         info = dict(exp=exp, exp_h=exp_h, proc_h=proc_h, proc=exp / need * 100 if need else None, meso=meso,
-                    cost=cost, used=used, level=level)
+                    cost=cost, used=used, level=level, best15=best15)
         start = time.localtime(g["at"])
         vals = [time.strftime("%Y-%m-%d", start), time.strftime("%H:%M", start), time.strftime("%H:%M"),
                 round(el / 60), level or "", exp, round(exp_h), "" if proc_h is None else f"{proc_h:.1f}".replace(".", ","),
-                "" if meso is None else meso, cost, "" if meso is None else meso - cost, used_txt]
+                "" if meso is None else meso, cost, "" if meso is None else meso - cost, used_txt,
+                "" if best15 is None else round(best15)]
         if maps is not None:
             vals.insert(1, maps)
         return el, vals, info
@@ -516,9 +538,19 @@ class Engine:
         try:
             if path.exists():
                 with open(path, encoding="utf-8-sig") as f:
-                    old = f.readline().strip() != ";".join(head)
+                    lines = f.read().splitlines()
+                first = lines[0].strip() if lines else ""
+                grown = first and ";".join(head).startswith(first + ";")
+                if grown:
+                    pad = ";" * (len(head) - len(first.split(";")))
+                    with open(path, "w", encoding="utf-8-sig") as f:
+                        f.write("\n".join([";".join(head)] + [ln + pad for ln in lines[1:] if ln.strip()]) + "\n")
+                old = not grown and first != ";".join(head)
                 if old:
-                    path.replace(path.with_name(path.stem + "_stare" + path.suffix))
+                    keep, i = path.with_name(path.stem + "_stare" + path.suffix), 2
+                    while keep.exists():
+                        keep, i = path.with_name(f"{path.stem}_stare{i}{path.suffix}"), i + 1
+                    path.replace(keep)
             new = not path.exists()
             with open(path, "a", encoding="utf-8-sig" if new else "utf-8") as f:
                 if new:
@@ -595,6 +627,7 @@ class Engine:
             self.last_mesos = r.mesos
         if r.window:
             self.meso.note_window(now)
+        self.meso.tick(s.on, now)
         if r.mesos is not None:
             got = self.meso.feed(r.mesos, r.window, s.on and t.exp is not None, now)
             if got:
@@ -610,6 +643,8 @@ class Engine:
                 ok, note = s.observe_percent(r.candidates[0][1], level, source, now)
             else:
                 ok, note = s.observe(r.candidates, r.confident, now)
+            if not self.exp_hist or self.exp_hist[-1][1] != t.gained:
+                self.exp_hist.append((t.elapsed(), t.gained))
             self.rejected = 0 if ok else self.rejected + 1
             if self.rejected >= 10:
                 self.reader.box, self.rejected = None, 0
@@ -700,10 +735,12 @@ class Engine:
         self.bar.reset()
         self.bar_names = set()
         self.meso.gained = 0
+        self.meso.cut(time.monotonic())
         self.reader.look_again()
         if on:
             self.session.start(time.monotonic())
         self.maps_done = []
+        self.exp_hist = []
         self.away = None
         self._start_segment()
         self.run = self.seg
@@ -756,10 +793,11 @@ class Engine:
             sec, _, info = self._totals(self.seg)
             if sec >= 60 and info["exp"] > 0:
                 live = dict(mapa=self.map_cur, exp=info["exp"], exp_h=info["exp_h"], proc_lv_h=info["proc_h"] or 0,
-                            meso=info["meso"], poty_koszt=info["cost"], lv=info["level"])
+                            meso=info["meso"], poty_koszt=info["cost"], lv=info["level"],
+                            exp_h_15min=info["best15"] or "")
         return dict(map=self.map_cur, state=state, elapsed=el, level=level, pct=pct, exp=t.exp, ttl=ttl, exp_h=rate,
                     pct_h=pct_h,
-                    exp_5=t.rolling_rate(), meso_h=meso_h, meso_seen=self.meso.base is not None, cost=cost,
+                    exp_5=t.rolling_rate(), meso_h=meso_h, meso_seen=self.meso.fresh(), cost=cost,
                     cost_h=cost_h, net_h=net_h, rows=rows, hp_h=hp_h, mp_h=mp_h, status=flash or self.status,
                     flash=bool(flash), estimated=t.estimated, waiting=s.waiting, on=s.on,
                     hpmp=self.hpmp if now - self.hpmp_at < 3 else None, counting=self.counting(),
@@ -777,7 +815,7 @@ def demo_snapshot():
                 hp_h=7950, mp_h=3720, status="", flash=False, estimated=False, waiting=None, on=True,
                 hpmp=((612, 829), (431, 657)), counting=True, last=(3.2, ["Red Potion"]),
                 live=dict(mapa="Henesys Hunting Ground I", exp=33280, exp_h=44178, proc_lv_h=15.0, meso=235300,
-                          poty_koszt=7350, lv=27))
+                          poty_koszt=7350, lv=27, exp_h_15min=51200))
 
 
 class Panel:
@@ -1555,8 +1593,12 @@ class HUD:
             c.create_text(14 * sc, y + 22 * sc, text=sub, font=self.f("reg", 7.5), fill=ORANGE if a["now"] else LABEL,
                           anchor="w")
             best = i == 0 and a["hours"] >= MAP_MIN_H
-            c.create_text(cx1, y + rh / 2, text=fmt(a["exp_h"]), font=self.f("bold" if best else "semi", 9),
-                          fill=ORANGE if best else TEXT, anchor="e")
+            top15 = a.get("top15") or a.get("best15")
+            c.create_text(cx1, y + (11 * sc if top15 else rh / 2), text=fmt(a["exp_h"]),
+                          font=self.f("bold" if best else "semi", 9), fill=ORANGE if best else TEXT, anchor="e")
+            if top15:
+                c.create_text(cx1, y + 22 * sc, text=f"15m {fmt(top15)}", font=self.f("reg", 7.5), fill=LABEL,
+                              anchor="e")
             pct_h = a["exp_h"] / m.EXP_TABLE[level - 1] * 100 if level and level <= len(m.EXP_TABLE) else a["pct_h"]
             c.create_text(cx2, y + rh / 2, text=f"{pct_h:.1f}%" if pct_h else "—", font=self.f("semi", 9),
                           fill=TEXT, anchor="e")
@@ -1700,6 +1742,8 @@ def main():
             m.log_error("looking for Tesseract", e)
     root = tk.Tk()
     hud = HUD(root, demo)
+    if "--maps" in sys.argv:
+        hud.toggle_maps()
     if "--details" in sys.argv:
         hud.toggle_details()
     if "--snap" in sys.argv:

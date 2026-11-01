@@ -26,7 +26,7 @@ The language follows Windows (Polish or English). To change it: **right-click a 
 | **Left** | LV, map, EXP bar, EXP/h and % of level per hour, EXP/h over the last 5 min, time to next level, session time |
 | **Right** | meso/h, potion cost/h, net/h (meso − potions) |
 | **▴ Potions** | your pet and what it drinks (HP/MP, picked from a list), potions with icons: how many used, per hour, cost, current HP/MP |
-| **▴ Maps** (left panel) | the 3 best maps: for each, its best run (EXP/h, % of your current level per hour, net/h, date). Only runs longer than 15 min count, so short visits change nothing. Going to a shop or storage and coming back to the same map within 10 min doesn't end the run (neither do maps on the way, even with a few kills). The break – repot, walking back, waiting for a PQ – counts towards the run, like in a real grind. The current run is added live after 5 min (PQ stages are one map). On top, a level goal: EXP and time left to the chosen level – click to set it. |
+| **▴ Maps** (left panel) | the 3 best maps: for each, its best run (EXP/h, % of your current level per hour, net/h, date). Under EXP/h: **15m** – the best 15 minutes from all runs on that map, i.e. what the spot can give at its best. Only runs longer than 15 min count, so short visits change nothing. Going to a shop or storage and coming back to the same map within 10 min doesn't end the run (neither do maps on the way, even with a few kills). The break – repot, walking back, waiting for a PQ – counts towards the run, like in a real grind. The current run is added live after 5 min (PQ stages are one map). On top, a level goal: EXP and time left to the chosen level – click to set it. |
 | **■ End grind** | summary: time, maps, EXP and % of level, meso looted, potion cost, net. Saved to `sesje.csv`. ▶ starts a new grind. |
 
 The panels fit the game window size (1366×768, 1920×1080 and others) and hide when the game isn't in front. MapleHUD closes by itself about 10 s after the game is closed.
@@ -38,7 +38,7 @@ MapleHUD only **takes screenshots** and reads numbers from them, like OBS or Dis
 | Data | Source |
 |---|---|
 | **EXP** | the EXP bar at the bottom of the game |
-| **Meso** | the meso counter in your inventory: open it at the start and every now and then (shop, storage and trade are ignored) |
+| **Meso** | the meso counter in your inventory: open it at the start and every now and then (shop, storage and trade are ignored). After ending a grind or a pause "open inv" shows again: mesos picked up before the start don't count towards the new run. |
 | **Potions** | the item count on the quickslot (exact, pet potions included); for potions not on the quickslot, HP/MP jumps on the status bar, e.g. +100 HP = Red Potion. Healing skills (HP up while MP is spent) aren't counted as potions. While the quickslot is hidden, HP/MP jumps are counted; once it shows again, the count catches up. A jump that matches no potion goes to **Other HP / Other MP** and costs as much as the cheapest potion (meso per HP/MP point). |
 | **Map** | name from the minimap (the minimap must be open) |
 
