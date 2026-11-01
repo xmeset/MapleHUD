@@ -13,6 +13,8 @@ Jak uruchomic:
   Windows moze pokazac "System Windows ochronil komputer" - kliknij
   "Wiecej informacji" > "Uruchom mimo to" (program nie jest podpisany).
 
+Jezyk: zgodny z Windows. Zmiana: prawy klik na panelu > Jezyk / Language.
+
 Skad bierze dane (tylko zrzuty ekranu, nic nie zmienia w grze):
   EXP   - pasek EXP na dole gry
   meso  - licznik meso w ekwipunku: otworz eq na start i co jakis czas

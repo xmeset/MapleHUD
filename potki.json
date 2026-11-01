@@ -10,8 +10,8 @@
   "tolerancja_spadek": 45,
   "tolerancja_regen": 15,
   "pomijaj_leczenie_skilli": true,
-  "pet_hp": null,
-  "pet_mp": null,
+  "pet_hp": "Meat",
+  "pet_mp": "Lemon",
   "mnoznik_hp": 1,
   "mnoznik_mp": 1,
   "potki": {

@@ -336,6 +336,7 @@ class PotionTracker:
         self.base = {}                        # (col, row, name) -> count at the last look
         self.pending = {}                     # key -> a big drop waiting to be seen a second time
         self.last_use = {}                    # key -> (count after, count before) of the use at the last look
+        self.rose = {}                        # key -> count before a rise (undone if the next drop goes below it)
 
     def cost(self, prices):
         """Mesos spent on what's been used, given {name: price} (an item without a price costs 0)."""
@@ -348,6 +349,7 @@ class PotionTracker:
                 self.base.pop(key)
                 self.pending.pop(key, None)
                 self.last_use.pop(key, None)
+                self.rose.pop(key, None)
         for s in slots:
             if s.count is None:
                 continue
@@ -357,12 +359,17 @@ class PotionTracker:
                 undo = self.last_use.pop(key, None)
                 if counting and undo and undo == (before, count):   # back to the count before a use: that was a misread
                     self.used[s.name] -= count - before
+                elif counting and before is not None and count > before:
+                    self.rose.setdefault(key, before)
                 self.base[key] = count
                 self.pending.pop(key, None)
                 continue
             if before - count > MAX_STEP and self.pending.get(key) != count:
                 self.pending[key] = count
                 continue
+            low = self.rose.pop(key, None)
+            if low is not None and count < low:               # a rise and then below where it rose from: a misread rise
+                before = low
             self.used[s.name] = self.used.get(s.name, 0) + before - count
             self.last_use[key] = (count, before)              # (undone if the next look is `before` again)
             self.base[key] = count

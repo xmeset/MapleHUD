@@ -1,5 +1,7 @@
 # MapleHUD
 
+**Polski** · [English](README.en.md)
+
 Overlay do **MapleStory Classic World**: EXP/h, meso/h, koszt potów na godzinę i zysk netto, w dwóch małych panelach po bokach dolnego paska gry.
 
 ![MapleHUD](docs/screenshot.png)
@@ -15,6 +17,8 @@ Windows może pokazać *„System Windows ochronił komputer”*, bo program nie
 
 Nic nie trzeba instalować. Wymagany Windows 10 lub 11.
 
+Język zgodny z Windows (polski lub angielski). Zmiana: **prawy klik na panelu → Język / Language**.
+
 ## Co pokazuje
 
 | Panel | Zawartość |
@@ -22,6 +26,7 @@ Nic nie trzeba instalować. Wymagany Windows 10 lub 11.
 | **Lewy** | LV, mapa, pasek EXP, EXP/h i % levelu na godzinę, EXP/h z ostatnich 5 min, czas do następnego levelu, czas sesji |
 | **Prawy** | meso/h, koszt potów/h, netto/h (meso − poty) |
 | **▴ Poty** | Twój pet i co pije (HP/MP, wybór z listy), lista potów z ikonkami: ile zużytych, ile na godzinę, koszt, aktualne HP/MP |
+| **▴ Mapy** (lewy panel) | 3 najlepsze mapy: przy każdej najlepszy run (EXP/h, % obecnego levelu na godzinę, netto/h, data). Liczą się tylko runy dłuższe niż 15 min, więc krótkie wejścia nic nie psują. Wyjście do sklepu czy storage i powrót na tę samą mapę w ciągu 10 min nie przerywa runu (mapy po drodze, nawet z paroma zabitymi mobami, też nie). Przerwa – repot, droga, czekanie na PQ – wlicza się do runu, tak jak w prawdziwym grindzie. Obecny run jest dopisany na żywo po 5 min (etapy PQ to jedna mapa). Na górze cel levelu: ile EXP i czasu do wybranego poziomu – kliknij, żeby ustawić. |
 | **■ Koniec grindu** | podsumowanie: czas, mapy, EXP i % levelu, zebrane meso, koszt potów, netto. Zapisuje do `sesje.csv`. ▶ zaczyna nowy grind. |
 
 Panele same dopasowują się do rozmiaru okna gry (1366×768, 1920×1080 i inne) i chowają się, gdy gra nie jest na wierzchu. Po wyłączeniu gry MapleHUD zamyka się sam (po ok. 10 s).
@@ -34,14 +39,14 @@ MapleHUD tylko **robi zrzuty ekranu** i odczytuje z nich liczby, tak jak OBS alb
 |---|---|
 | **EXP** | pasek EXP na dole gry |
 | **Meso** | licznik meso w ekwipunku: otwórz eq na starcie i co jakiś czas (zakupy w sklepie, storage i trade są pomijane) |
-| **Poty** | liczba sztuk na quickslocie (dokładne, także poty od peta), a dla potów spoza quickslota skoki HP/MP na pasku statusu, np. +100 HP = Red Potion. Leczenie ze skilli (HP w górę przy zużyciu many) nie jest liczone jako pot. |
+| **Poty** | liczba sztuk na quickslocie (dokładne, także poty od peta), a dla potów spoza quickslota skoki HP/MP na pasku statusu, np. +100 HP = Red Potion. Leczenie ze skilli (HP w górę przy zużyciu many) nie jest liczone jako pot. Gdy quickslot jest schowany, liczą się skoki HP/MP, a po jego pokazaniu liczba się wyrównuje. Skok, który nie pasuje do żadnego pota, trafia do **Inne HP / Inne MP** i kosztuje tyle, co najtańszy pot (meso za punkt HP/MP). |
 | **Mapa** | nazwa z minimapy (minimapa musi być otwarta) |
 
-Liczenie pauzuje się samo po 5 min bez EXP (AFK, dłuższa przerwa) i rusza przy następnym EXP; ten czas bez EXP nie jest liczony. Krótkie wyjście z okna gry, sklep czy etap PQ bez mobów nie zatrzymuje czasu.
+Liczenie pauzuje się samo po 10 min bez EXP (AFK, dłuższa przerwa) i rusza przy następnym EXP; ten czas bez EXP nie jest liczony. Wyjście z okna gry, sklep, etap PQ bez mobów czy czekanie na wejście do PQ nie zatrzymują czasu.
 
 ## Ustawienia
 
-**Prawy klik na panelu**: start/pauza, koniec grindu, reset sesji, lista potów, **Pet: pot HP / pot MP** (co pije pet), przezroczystość, poziom (gdy pasek pokazuje tylko %), zamknij.
+**Prawy klik na panelu**: start/pauza, koniec grindu, reset sesji, lista potów, porównanie map, cel levelu, **Pet: pot HP / pot MP** (co pije pet), przezroczystość, poziom (gdy pasek pokazuje tylko %), język, zamknij.
 
 **`potki.json`** (obok MapleHUD.exe):
 
@@ -58,7 +63,7 @@ Liczenie pauzuje się samo po 5 min bez EXP (AFK, dłuższa przerwa) i rusza prz
 - `tolerancja_spadek` / `tolerancja_regen` – o ile skok może się różnić, gdy w tej samej chwili dostaniesz hita albo użyjesz skilla.
 - `mnoznik_hp` / `mnoznik_mp` – bonus klasy do potów, np. `1.5` dla warriora z Improved HP Recovery.
 - `pomijaj_leczenie_skilli` – `true`: skok HP przy zużyciu many to skill, nie pot.
-- `pet_hp` / `pet_mp` – co pije pet, np. `"Meat"` (`null` = brak peta). Wygodniej wybrać w panelu **▴ Poty** (pet, POT HP, POT MP). Pet pije w chwili trafienia, więc każdy wzrost HP do pełnej wartości pota liczy się jako jego pot. Gdy pot peta jest też na quickslocie, liczony jest dokładnie stamtąd. Regen (ten sam wzrost HP co 10 s, np. u warriora) jest pomijany.
+- `pet_hp` / `pet_mp` – co pije pet, domyślnie `"Meat"` i `"Lemon"` (`null` = brak peta). Wygodniej wybrać w panelu **▴ Poty** (pet, POT HP, POT MP). Pet pije w chwili trafienia, więc każdy wzrost HP do pełnej wartości pota liczy się jako jego pot. Gdy pot peta jest też na quickslocie, liczony jest dokładnie stamtąd. Regen (ten sam wzrost HP co 10 s, np. u warriora) jest pomijany.
 
 Po zmianie wybierz **prawy klik → Wczytaj potki.json**.
 
@@ -74,7 +79,7 @@ W folderze `data` obok exe:
 
 - Pot wypity dokładnie w chwili mocnego trafienia może nie zostać policzony.
 - Gdy HP jest pełne po pocie, a na liście jest kilka potów HP, przyjmowany jest ostatnio rozpoznany.
-- Heal od clerica o wartości zbliżonej do pota może zostać policzony jako pot.
+- Heal od clerica może zostać policzony jako pot peta albo jako Inne HP. Poty peta na widocznym quickslocie liczą się dokładnie z licznika sztuk, więc heal ich nie zmienia.
 - Overlay nie może zasłaniać paska EXP ani licznika meso w ekwipunku.
 - Działa jedna kopia programu naraz.
 
@@ -93,6 +98,7 @@ build.bat
 | Plik | Co robi |
 |---|---|
 | `maple_hud.py` | aplikacja, panele, logi |
+| `lang.py` | angielskie tłumaczenie interfejsu |
 | `hpmp.py` | odczyt HP/MP z paska statusu |
 | `potcount.py` | rozpoznawanie potów ze skoków HP/MP |
 | `mesocount.py` | licznik meso z ekwipunku |

@@ -11,6 +11,7 @@ if not exist ".venv\Scripts\python.exe" (
   maple_hud.py || exit /b 1
 copy /y potki.json dist\MapleHUD\potki.json >nul
 copy /y CZYTAJ.txt dist\MapleHUD\CZYTAJ.txt >nul
+copy /y README.txt dist\MapleHUD\README.txt >nul
 copy /y LICENSE.txt dist\MapleHUD\LICENSE.txt >nul
 copy /y engine\LICENSE dist\MapleHUD\THIRD-PARTY-LICENSES.txt >nul
 powershell -NoProfile -Command "Compress-Archive -Force -Path dist\MapleHUD -DestinationPath ..\MapleHUD.zip"
