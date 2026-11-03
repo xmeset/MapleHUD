@@ -155,9 +155,10 @@ def best_window(hist, start, span=BEST_SPAN):
 
 
 def day_total(runs, day):
-    """EXP and hours of play on `day` (YYYY-MM-DD), the run going on included."""
+    """EXP, hours of play and net mesos on `day` (YYYY-MM-DD), the run going on included."""
     today = [r for r in runs if r["now"] or r["date"] == day]
-    return sum(r["exp_h"] * r["hours"] for r in today), sum(r["hours"] for r in today)
+    return (sum(r["exp_h"] * r["hours"] for r in today), sum(r["hours"] for r in today),
+            sum((r["net_h"] or 0) * r["hours"] for r in today))
 
 
 def best_runs(runs, min_hours):
@@ -1560,7 +1561,7 @@ class HUD:
         c.delete("all")
         level = s["level"]
         runs = map_runs(self.map_rows(), s.get("live"))
-        day_exp, day_h = day_total(runs, time.strftime("%Y-%m-%d"))
+        day_exp, day_h, day_net = day_total(runs, time.strftime("%Y-%m-%d"))
         if level:
             runs = [r for r in runs if not r["lv"] or r["lv"] >= level - 5]
         cur = next((r for r in runs if r["now"] and r["hours"] >= NOW_MIN_H), None)
@@ -1588,7 +1589,10 @@ class HUD:
         c.create_text(44 * sc, y + gh / 2, text=f"{fmt(day_exp)} EXP", font=self.f("bold", 10), fill=ORANGE,
                       anchor="w")
         rate = day_exp / day_h if day_h else None
-        c.create_text(w - 14 * sc, y + gh / 2, text=f"{fmt_time(day_h * 3600)}  ·  {fmt(rate)}/HR",
+        net = ("+" if day_net >= 0 else "−") + fmt(abs(day_net)) + " meso"
+        tid = c.create_text(w - 14 * sc, y + gh / 2, text=net, font=self.f("semi", 8.5),
+                            fill=GREEN if day_net >= 0 else RED, anchor="e")
+        c.create_text(c.bbox(tid)[0] - 2 * sc, y + gh / 2, text=f"{fmt_time(day_h * 3600)}  ·  {fmt(rate)}/HR  ·",
                       font=self.f("semi", 8.5), fill=TEXT, anchor="e")
         y += gh + round(16 * sc)
         cx1, cx2 = w * 0.62, w * 0.79
