@@ -64,6 +64,7 @@ TRANSIT = 300
 MAP_MIN_H = 15 / 60
 NOW_MIN_H = 5 / 60
 TOP_MAPS = 3
+MAP_RUNS = 8
 SUMMARY_EVERY = 30
 GAME_GONE = 10
 UI_HALF = 400
@@ -136,7 +137,8 @@ def map_runs(rows, live=None):
         out.append(dict(name=re.sub(r"\s*<[^>]*>\s*$", "", r.get("mapa") or "").strip(), exp_h=exp_h or exp / hours,
                         hours=hours, pct_h=num(r.get("proc_lv_h")), lv=int(num(r.get("lv")) or 0) or None,
                         net_h=None if meso is None else (meso - (num(r.get("poty_koszt")) or 0)) / hours,
-                        date=r.get("data") or "", now=r is live, best15=num(r.get("exp_h_15min") or "")))
+                        date=r.get("data") or "", now=r is live, best15=num(r.get("exp_h_15min") or ""),
+                        start=r.get("start") or ""))
     return out
 
 
@@ -847,7 +849,7 @@ class Panel:
     def _hit(self, e):
         for item in reversed(self.c.find_overlapping(e.x - 1, e.y - 1, e.x + 1, e.y + 1)):
             for tag in self.c.gettags(item):
-                if tag in self.actions or tag.startswith("pet"):
+                if tag in self.actions or tag.startswith(("pet", "map:")):
                     return tag
         return None
 
@@ -857,6 +859,8 @@ class Panel:
             self.hud.pet_menu(None, e)
         elif tag and tag.startswith("petsel:"):
             self.hud.pet_menu(tag[7:], e)
+        elif tag and tag.startswith("map:"):
+            self.hud.open_map(int(tag[4:]))
         elif tag:
             self.actions[tag]()
 
@@ -1071,6 +1075,7 @@ class HUD:
         self.mapsp = Panel(self, root, "maps")
         self.mapsp.win.withdraw()
         self.show_maps = False
+        self.map_open, self.map_names = None, []
         self.maps_cache = (None, [])
         self.maps_top = None
         self.summary = None
@@ -1562,6 +1567,7 @@ class HUD:
         level = s["level"]
         runs = map_runs(self.map_rows(), s.get("live"))
         day_exp, day_h, day_net = day_total(runs, time.strftime("%Y-%m-%d"))
+        every = runs
         if level:
             runs = [r for r in runs if not r["lv"] or r["lv"] >= level - 5]
         cur = next((r for r in runs if r["now"] and r["hours"] >= NOW_MIN_H), None)
@@ -1600,7 +1606,9 @@ class HUD:
             c.create_text(x, y - 7 * sc, text=lab, font=self.f("semi", 7.5), fill=LABEL, anchor="e")
         rh = round(30 * sc)
         room = int((cx1 - 50 * sc - 14 * sc) / (5.8 * sc))
+        self.map_names = [a["name"] for a in stats]
         for i, a in enumerate(stats):
+            top = y
             rrect(c, 6 * sc, y, w - 6 * sc, y + rh, round(6 * sc), fill=CARD,
                   outline=ORANGE if a["now"] else mix(BODY, BORDER, 0.7))
             name = a["name"] if len(a["name"]) <= room else a["name"][:max(3, room - 1)] + "…"
@@ -1630,7 +1638,11 @@ class HUD:
             net = a["net_h"]
             c.create_text(w - 12 * sc, y + rh / 2, text=fmt(net), font=self.f("semi", 9),
                           fill=LABEL if net is None else GREEN if net >= 0 else RED, anchor="e")
+            for item in c.find_overlapping(6 * sc, top, w - 6 * sc, top + rh):
+                c.addtag_withtag(f"map:{i}", item)
             y += rh + round(3 * sc)
+            if a["name"] == self.map_open:
+                y = self.draw_map_runs(c, w, y, [r for r in every if r["name"] == a["name"]], cx1, cx2)
         if not stats:
             tid = c.create_text(14 * sc, y, text=T("Brak danych – mapa pojawia się po runie dłuższym niż 15 min."),
                                 font=self.f("reg", 8), fill=LABEL, anchor="nw", width=w - 28 * sc)
@@ -1644,6 +1656,38 @@ class HUD:
         p.place(lx, self.maps_top, w, h)
         c.tag_raise("all")
 
+    def draw_map_runs(self, c, w, y, runs, cx1, cx2):
+        sc = self.scale
+        hours = sum(r["hours"] for r in runs)
+        exp = sum(r["exp_h"] * r["hours"] for r in runs)
+        net = sum((r["net_h"] or 0) * r["hours"] for r in runs)
+        head = T("{} runów · {} · śr. {}/HR").format(len(runs), fmt_time(hours * 3600),
+                                                       fmt(exp / hours if hours else None))
+        c.create_text(16 * sc, y + 7 * sc, text=head, font=self.f("semi", 7.5), fill=LABEL, anchor="w")
+        c.create_text(w - 12 * sc, y + 7 * sc, text=("+" if net >= 0 else "−") + fmt(abs(net)) + " meso",
+                      font=self.f("semi", 7.5), fill=GREEN if net >= 0 else RED, anchor="e")
+        y += round(16 * sc)
+        runs = sorted(runs, key=lambda r: (r["now"], r["date"], r["start"]), reverse=True)
+        for r in runs[:MAP_RUNS]:
+            when = T("teraz") if r["now"] else ".".join(r["date"].split("-")[:0:-1]) + " " + r["start"]
+            sub = " · ".join(x for x in (when, fmt_time(r["hours"] * 3600), f"LV {r['lv']}" if r["lv"] else "") if x)
+            c.create_text(16 * sc, y + 7 * sc, text=sub, font=self.f("reg", 7.5), fill=ORANGE if r["now"] else TEXT,
+                          anchor="w")
+            c.create_text(cx1, y + 7 * sc, text=fmt(r["exp_h"]), font=self.f("semi", 7.5), fill=TEXT, anchor="e")
+            if r.get("best15"):
+                c.create_text(cx2, y + 7 * sc, text=f"15m {fmt(r['best15'])}", font=self.f("reg", 7.5), fill=LABEL,
+                              anchor="e")
+            if r["net_h"] is not None:
+                n = r["net_h"] * r["hours"]
+                c.create_text(w - 12 * sc, y + 7 * sc, text=("+" if n >= 0 else "−") + fmt(abs(n)),
+                              font=self.f("semi", 7.5), fill=GREEN if n >= 0 else RED, anchor="e")
+            y += round(15 * sc)
+        if len(runs) > MAP_RUNS:
+            c.create_text(16 * sc, y + 7 * sc, text=T("+{} starszych").format(len(runs) - MAP_RUNS),
+                          font=self.f("reg", 7.5), fill=LABEL, anchor="w")
+            y += round(15 * sc)
+        return y + round(4 * sc)
+
     def toggle_maps(self):
         self.show_maps = not self.show_maps
         if self.show_maps:
@@ -1651,6 +1695,10 @@ class HUD:
             self.mapsp.win.attributes("-topmost", True)
         else:
             self.mapsp.win.withdraw()
+
+    def open_map(self, i):
+        name = self.map_names[i] if i < len(self.map_names) else None
+        self.map_open = None if name == self.map_open else name
 
     def set_goal(self):
         v = simpledialog.askinteger(T("Cel levelu…"), T("Docelowy poziom (0 = brak):"), parent=self.root, minvalue=0,

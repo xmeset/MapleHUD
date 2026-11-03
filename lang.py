@@ -69,6 +69,8 @@ EN = {
     "Brak danych – mapa pojawia się po runie dłuższym niż 15 min.":
         "No data yet – a map shows up after a run longer than 15 min.",
     "najlepszy z {}": "best of {}",
+    "{} runów · {} · śr. {}/HR": "{} runs · {} · avg {}/HR",
+    "+{} starszych": "+{} older",
     "MAPY": "MAPS",
     "najlepszy run na mapie": "best run per map",
     "TOP 3 MAPY": "TOP 3 MAPS",
