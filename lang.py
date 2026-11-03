@@ -63,6 +63,7 @@ EN = {
     "Cel levelu…": "Level goal…",
     "Docelowy poziom (0 = brak):": "Target level (0 = none):",
     "CEL": "GOAL",
+    "DZIŚ": "TODAY",
     "kliknij, aby ustawić poziom": "click to set a target level",
     "teraz": "now",
     "Brak danych – mapa pojawia się po runie dłuższym niż 15 min.":

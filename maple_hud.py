@@ -154,6 +154,12 @@ def best_window(hist, start, span=BEST_SPAN):
     return best
 
 
+def day_total(runs, day):
+    """EXP and hours of play on `day` (YYYY-MM-DD), the run going on included."""
+    today = [r for r in runs if r["now"] or r["date"] == day]
+    return sum(r["exp_h"] * r["hours"] for r in today), sum(r["hours"] for r in today)
+
+
 def best_runs(runs, min_hours):
     """The best run (EXP/h) of each map, from runs at least `min_hours` long, best first."""
     best, count, top15 = {}, {}, {}
@@ -1554,6 +1560,7 @@ class HUD:
         c.delete("all")
         level = s["level"]
         runs = map_runs(self.map_rows(), s.get("live"))
+        day_exp, day_h = day_total(runs, time.strftime("%Y-%m-%d"))
         if level:
             runs = [r for r in runs if not r["lv"] or r["lv"] >= level - 5]
         cur = next((r for r in runs if r["now"] and r["hours"] >= NOW_MIN_H), None)
@@ -1575,6 +1582,14 @@ class HUD:
         else:
             c.create_text(44 * sc, y + gh / 2, text=T("kliknij, aby ustawić poziom"), font=self.f("semi", 8.5),
                           fill=ORANGE, anchor="w", tags=tag)
+        y += gh + round(3 * sc)
+        rrect(c, 6 * sc, y, w - 6 * sc, y + gh, round(6 * sc), fill=CARD, outline=mix(BODY, BORDER, 0.7))
+        c.create_text(14 * sc, y + gh / 2, text=T("DZIŚ"), font=self.f("semi", 7.5), fill=LABEL, anchor="w")
+        c.create_text(44 * sc, y + gh / 2, text=f"{fmt(day_exp)} EXP", font=self.f("bold", 10), fill=ORANGE,
+                      anchor="w")
+        rate = day_exp / day_h if day_h else None
+        c.create_text(w - 14 * sc, y + gh / 2, text=f"{fmt_time(day_h * 3600)}  ·  {fmt(rate)}/HR",
+                      font=self.f("semi", 8.5), fill=TEXT, anchor="e")
         y += gh + round(16 * sc)
         cx1, cx2 = w * 0.62, w * 0.79
         for x, lab in ((cx1, "EXP/HR"), (cx2, "%/HR"), (w - 10 * sc, T("NETTO/HR"))):
