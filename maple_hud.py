@@ -1587,13 +1587,19 @@ class HUD:
             name = a["name"] if len(a["name"]) <= room else a["name"][:max(3, room - 1)] + "…"
             c.create_text(14 * sc, y + 11 * sc, text=name, font=self.f("semi", 9), fill=TEXT, anchor="w")
             day = ".".join(a["date"].split("-")[:0:-1])
-            sub = " · ".join(x for x in (f"LV {a['lv']}" if a["lv"] else "", fmt_time(a["hours"] * 3600),
-                                         T("teraz") if a["now"] else day,
-                                         T("najlepszy z {}").format(a["runs"]) if a.get("runs", 0) > 1 else "") if x)
+            top15 = a.get("top15") or a.get("best15")
+            small = tkfont.Font(font=self.f("reg", 7.5))
+            fit = cx1 - 22 * sc - (small.measure(f"15m {fmt(top15)}") if top15 else 0)
+            runs = a.get("runs", 0)
+            for many, when in ((T("najlepszy z {}").format(runs), True), (f"×{runs}", True), (f"×{runs}", False)):
+                sub = " · ".join(x for x in (f"LV {a['lv']}" if a["lv"] else "", fmt_time(a["hours"] * 3600),
+                                             (T("teraz") if a["now"] else day) if when else "",
+                                             many if runs > 1 else "") if x)
+                if small.measure(sub) <= fit:
+                    break
             c.create_text(14 * sc, y + 22 * sc, text=sub, font=self.f("reg", 7.5), fill=ORANGE if a["now"] else LABEL,
                           anchor="w")
             best = i == 0 and a["hours"] >= MAP_MIN_H
-            top15 = a.get("top15") or a.get("best15")
             c.create_text(cx1, y + (11 * sc if top15 else rh / 2), text=fmt(a["exp_h"]),
                           font=self.f("bold" if best else "semi", 9), fill=ORANGE if best else TEXT, anchor="e")
             if top15:
