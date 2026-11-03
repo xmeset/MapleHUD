@@ -325,6 +325,7 @@ class Engine:
         self.potki_ref = potki
         self.maps_done = []
         self.exp_hist = []
+        self.meso_start = None
         self._start_segment()
         self.run = self.seg
         self.q = queue.Queue()
@@ -587,7 +588,7 @@ class Engine:
         g = self.run
         maps = list(dict.fromkeys(self.maps_done + ([self.map_cur] if self.map_cur else [])))
         el, vals, info = self._totals(g, ", ".join(maps))
-        info.update(el=el, maps=maps, saved=el >= MIN_MAP_ROW)
+        info.update(el=el, maps=maps, saved=el >= MIN_MAP_ROW, eq=self.eq())
         if info["saved"]:
             head = CSV_HEAD[:1] + ["mapy"] + CSV_HEAD[1:]
             self._csv(SESJE, head, vals)
@@ -641,6 +642,9 @@ class Engine:
             got = self.meso.feed(r.mesos, r.window, s.on and t.exp is not None, now)
             if got:
                 self.log(f"meso +{got:,} (zarobione w sesji: {self.meso.gained:,})")
+        if self.meso_start is None and self.meso.fresh():
+            self.meso_start = self.meso.base - self.meso.gained
+            self.log(f"meso w eq na starcie runu: {self.meso_start:,}")
         if r.bar is not None:
             self._bar(r.bar)
         if r.map:
@@ -750,9 +754,13 @@ class Engine:
             self.session.start(time.monotonic())
         self.maps_done = []
         self.exp_hist = []
+        self.meso_start = None
         self.away = None
         self._start_segment()
         self.run = self.seg
+
+    def eq(self):
+        return None if self.meso_start is None else (self.meso_start, self.meso.base)
 
     def snapshot(self, potki):
         t, s = self.t, self.session
@@ -810,13 +818,13 @@ class Engine:
                     cost_h=cost_h, net_h=net_h, rows=rows, hp_h=hp_h, mp_h=mp_h, status=flash or self.status,
                     flash=bool(flash), estimated=t.estimated, waiting=s.waiting, on=s.on,
                     hpmp=self.hpmp if now - self.hpmp_at < 3 else None, counting=self.counting(),
-                    last=(now - last[0], last[1]) if last else None, live=live)
+                    last=(now - last[0], last[1]) if last else None, live=live, eq=self.eq())
 
 
 def demo_snapshot():
     return dict(map="Henesys Hunting Ground I", state="on", elapsed=2712, level=27, pct=14.77, exp=9406, ttl=4980, exp_h=44178,
                 pct_h=15.0, exp_5=46100,
-                meso_h=312400, meso_seen=True, cost=7350, cost_h=9757, net_h=302643, rows=[
+                meso_h=312400, meso_seen=True, eq=(1215300, 1450600), cost=7350, cost_h=9757, net_h=302643, rows=[
                     dict(name="Red Potion", used=41, per_h=54.4, cost=2050, hp=100, mp=0, price=50),
                     dict(name="Meat", used=12, per_h=15.9, cost=960, hp=160, mp=0, price=80, pet=True),
                     dict(name="Lemon", used=19, per_h=25.2, cost=2850, hp=0, mp=150, price=150, pet=True, bar=True),
@@ -1344,6 +1352,14 @@ class HUD:
         y = cy + ch + round(18 * sc)
         y_rows = y
         y += len(rows) * (rh + round(3 * sc))
+        eq = s.get("eq")
+        if eq:
+            eh = round(22 * sc)
+            rrect(c, 6 * sc, y, w - 6 * sc, y + eh, round(6 * sc), fill=CARD, outline=mix(BODY, BORDER, 0.7))
+            c.create_text(14 * sc, y + eh / 2, text=T("MESO W EQ"), font=self.f("semi", 7.5), fill=LABEL, anchor="w")
+            c.create_text(w - 12 * sc, y + eh / 2, text=T("start {:,} → teraz {:,}").format(*eq),
+                          font=self.f("semi", 8.5), fill=GOLD, anchor="e")
+            y += eh + round(3 * sc)
         tid = c.create_text(round(9 * sc), y + 4 * sc, text="\n".join(msgs), font=self.f("reg", 8), fill=LABEL,
                             anchor="nw", width=w - 18 * sc)
         bb = c.bbox(tid)
@@ -1487,7 +1503,7 @@ class HUD:
         else:
             self.summary = dict(el=2712, maps=["Henesys Hunting Ground I", "Henesys Hunting Ground II"], exp=33280,
                                 exp_h=44178, proc_h=15.0, proc=11.3, meso=235300, cost=7350, level=27, saved=True,
-                                used={"Red Potion": 41, "Meat": 12, "Lemon": 19})
+                                eq=(1215300, 1450600), used={"Red Potion": 41, "Meat": 12, "Lemon": 19})
         if self.visible:
             self.summ.win.deiconify()
             self.summ.win.attributes("-topmost", True)
@@ -1511,6 +1527,7 @@ class HUD:
         lines = [("EXP", f"+{fmt(sm['exp'])}" + (f"  ({sm['proc']:.1f}% lvl)" if sm.get("proc") else ""), ORANGE),
                  ("EXP/HR", fmt(sm["exp_h"]) + (f"  ·  {sm['proc_h']:.1f}%/HR" if sm.get("proc_h") else ""), TEXT),
                  (T("Meso zebrane"), T("eq nie było otwarte") if meso is None else f"+{fmt(meso)}", GOLD),
+                 *([(T("Meso w eq"), "{:,} → {:,}".format(*sm["eq"]), TEXT)] if sm.get("eq") else []),
                  (T("Poty"), f"-{fmt(cost)}" if cost else "0", RED),
                  (T("Netto"), "—" if net is None else ("+" if net >= 0 else "") + fmt(net),
                   LABEL if net is None else GREEN if net >= 0 else RED)]
