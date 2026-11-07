@@ -12,7 +12,9 @@ import numpy as np
 REF_H = 1080
 BLUR = 4
 STRIP_W, STRIP_H = 0.55, 110    # share of the window's width (from its right edge), px tall at 1080 p
-ACCEPT = 0.80                   # how alike (correlation) a match must be at least
+ACCEPT = 0.76                   # how alike (correlation) a match must be at least
+BANDS = 6                       # the icon is compared in this many bands, top to bottom
+FRAME_DARK, FRAME_STEP = 120, 40    # the frame is darker than this, and this much darker than just inside it
 
 
 def fingerprint(icon_bgr, digits, grid=16, ring=3):
@@ -49,27 +51,51 @@ def strip_box(window_w, window_h):
     return window_w - w, 0, w, int(STRIP_H * window_h / REF_H)
 
 
+def _frame_spots(w, h):
+    """Points on the icon's dark frame (left, right and bottom: the top can be under the game's FPS counter)
+    and just inside it, as ([(x, y)], [(x, y)])."""
+    rows = range(8, h - 8, 3)
+    cols = range(8, w - 8, 3)
+    edge = [(1, y) for y in rows] + [(w - 2, y) for y in rows] + [(x, h - 2) for x in cols]
+    inner = [(5, y) for y in rows] + [(w - 6, y) for y in rows] + [(x, h - 6) for x in cols]
+    return edge, inner
+
+
 def match(img, item):
     """(similarity, x, y) of the best place for item in img (already at 1080 p size), or None.
-    Similarity is the correlation of the colours at the item's points (1 = same picture), so an icon
-    shown dimmer or brighter (buff icons fade in and out) still matches."""
+
+    Similarity is the correlation of the colours at the item's points, worked out band by band
+    (top to bottom) so a band dimmed as a whole still matches: the game greys a buff icon from the top
+    down as its time runs out. The worst band doesn't count (it may be under the FPS counter, or half
+    greyed), and only a place with a dark frame round it counts, so a blurry background can't pass."""
     w, h = item["w"], item["h"]
     H, W = img.shape[:2]
     if H < h or W < w:
         return None
     soft = cv2.blur(img.astype(np.float32), (BLUR, BLUR))
-    ref = np.array([p[2:] for p in item["points"]], np.float32)
-    ref = (ref - ref.mean()) / (np.linalg.norm(ref - ref.mean()) or 1)
-    n = ref.size
+    grey = cv2.erode(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY).astype(np.float32), np.ones((3, 3), np.uint8))
+    bright = cv2.dilate(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY).astype(np.float32), np.ones((3, 3), np.uint8))
+    groups = []
+    for b in range(BANDS):
+        pts = [p for p in item["points"] if b * h / BANDS <= p[1] < (b + 1) * h / BANDS]
+        ref = np.array([p[2:] for p in pts], np.float32)
+        groups.append((pts, (ref - ref.mean()) / (np.linalg.norm(ref - ref.mean()) or 1)))
+    edge, inner = _frame_spots(w, h)
 
     def score(x0, y0, x1, y1, step):
-        s1 = s2 = sx = 0
-        for (x, y, *_), v in zip(item["points"], ref):
-            patch = soft[y0 + y:y1 + y:step, x0 + x:x1 + x:step]
-            s1 = s1 + patch.sum(2)
-            s2 = s2 + (patch * patch).sum(2)
-            sx = sx + (patch * v).sum(2)
-        return sx / np.sqrt(np.maximum(s2 - s1 * s1 / n, 1e-6))
+        bands = []
+        for pts, ref in groups:
+            s1 = s2 = sx = 0
+            for (x, y, *_), v in zip(pts, ref):
+                patch = soft[y0 + y:y1 + y:step, x0 + x:x1 + x:step]
+                s1 = s1 + patch.sum(2)
+                s2 = s2 + (patch * patch).sum(2)
+                sx = sx + (patch * v).sum(2)
+            bands.append(sx / np.sqrt(np.maximum(s2 - s1 * s1 / ref.size, 1e-6)))
+        bands = np.sort(np.stack(bands), axis=0)[1:].mean(0)
+        dark = sum(grey[y0 + y:y1 + y:step, x0 + x:x1 + x:step] for x, y in edge) / len(edge)
+        light = sum(bright[y0 + y:y1 + y:step, x0 + x:x1 + x:step] for x, y in inner) / len(inner)
+        return np.where((dark < FRAME_DARK) & (light - dark > FRAME_STEP), bands, 0)
 
     coarse = score(0, 0, W - w + 1, H - h + 1, 2)
     cy, cx = np.unravel_index(int(np.argmax(coarse)), coarse.shape)
