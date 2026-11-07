@@ -32,6 +32,7 @@ from PIL import Image, ImageTk  # noqa: E402
 import maple_exp as m  # noqa: E402
 import hpmp  # noqa: E402
 import potions  # noqa: E402
+import buffs  # noqa: E402
 from capture import ScreenCapture, grab  # noqa: E402
 import lang  # noqa: E402
 from lang import T  # noqa: E402
@@ -68,6 +69,7 @@ MAP_RUNS = 6
 SUMMARY_EVERY = 30
 GAME_GONE = 10
 UI_HALF = 400
+BUFF_HOLD = 3.5
 
 HEAD_TOP, HEAD_BOT = "#ffd98a", "#f29b38"
 HEAD_TEXT = "#5b2a07"
@@ -326,6 +328,12 @@ class Engine:
         self.maps_done = []
         self.exp_hist = []
         self.meso_start = None
+        try:
+            self.buff_table = buffs.BuffTable.load(m.ASSETS / "buff_table.json")
+        except Exception as e:
+            m.log_error("loading buff_table.json", e)
+            self.buff_table = None
+        self.buff_seen = {}
         self._start_segment()
         self.run = self.seg
         self.q = queue.Queue()
@@ -412,6 +420,9 @@ class Engine:
                         t0 = time.monotonic()
                         try:
                             self.q.put(("r", self.reader.read(cap), t0))
+                            seen = self._read_buffs(cap)
+                            if seen is not None:
+                                self.q.put(("buff", seen, t0))
                         except Exception as e:
                             m.log_error("reading the screen", e)
                             self.q.put(("e", f"{type(e).__name__}: {e}", t0))
@@ -419,6 +430,23 @@ class Engine:
             except Exception as e:
                 m.log_error("starting to read the screen", e)
                 self.stop.wait(5)
+
+    def _read_buffs(self, cap):
+        rect = self.game_rect()
+        if not rect or not self.buff_table:
+            return None
+        wx, wy, ww, wh = rect
+        bx, by, bw, bh = buffs.strip_box(ww, wh)
+        shot = self.reader._hide_own(cap.grab(wx + bx, wy + by, bw, bh))
+        if not shot:
+            return None
+        img = shot[0]
+        return {name: img[y:y + h, x:x + w].copy() for name, (x, y, w, h) in buffs.find(img, wh, self.buff_table).items()}
+
+    def buff(self, name):
+        """The icon (BGR) of a buff showing now (or a moment ago), else None."""
+        seen = self.buff_seen.get(name)
+        return seen[0] if seen and time.monotonic() - seen[1] < BUFF_HOLD else None
 
     def _hpmp_worker(self):
         while not self.stop.is_set():
@@ -606,6 +634,11 @@ class Engine:
                 break
             if kind == "e":
                 self.status, self.error = r, True
+            elif kind == "buff":
+                for name, icon in r.items():
+                    if not self.buff(name):
+                        self.log(f"buff: {name}")
+                    self.buff_seen[name] = (icon, at)
             elif kind == "hp":
                 self.hpmp, self.hpmp_at = r, at
                 self.counter.feed(r, self.counting(), at)
@@ -1086,6 +1119,9 @@ class HUD:
         self.mapsp = Panel(self, root, "maps")
         self.mapsp.win.withdraw()
         self.show_maps = False
+        self.alert = Panel(self, root, "alert")
+        self.alert.win.withdraw()
+        self.alert_on, self.alert_img = False, None
         self.map_open, self.map_names, self.map_page, self.map_short = None, [], 0, False
         self.maps_cache = (None, [])
         self.maps_top = None
@@ -1175,7 +1211,7 @@ class HUD:
 
     def shown(self):
         return (self.left, self.right) + ((self.details,) if self.show_details else ()) + \
-            ((self.mapsp,) if self.show_maps else ()) + ((self.summ,) if self.summary else ())
+            ((self.mapsp,) if self.show_maps else ()) + ((self.summ,) if self.summary else ()) +             ((self.alert,) if self.alert_on else ())
 
     def _game_closed(self):
         if self.demo or not self.engine:
@@ -1209,6 +1245,7 @@ class HUD:
                 self.draw_maps(snap)
             if self.summary:
                 self.draw_summary(self.summary)
+            self.draw_alert()
             if self.engine:
                 rects = [p.rect() for p in self.shown()]
                 self.engine.reader.own_rects = tuple(r for r in rects if r)
@@ -1727,6 +1764,44 @@ class HUD:
                               fill=ORANGE if ok else mix(BODY, LABEL, 0.4), tags=(f"mpg:{step}",) if ok else ())
             y += round(15 * sc)
         return y + round(4 * sc)
+
+    def draw_alert(self):
+        if self.engine:
+            icon = self.engine.buff("Final Attack")
+        else:
+            icon = Image.open(self.cfg["demo_buff"]).convert("RGB") if self.cfg.get("demo_buff") else None
+        rect = self.game_rect()
+        on = icon is not None and rect is not None
+        if on != self.alert_on:
+            self.alert_on = on
+            if not on:
+                self.alert.win.withdraw()
+            elif self.visible:
+                self.alert.win.deiconify()
+                self.alert.win.attributes("-topmost", True)
+        if not on:
+            return
+        wx, wy, ww, wh = rect
+        u = wh / 1080
+        ex, ey, _ = potions.bar_estimate(ww, wh)
+        sx, sy = self.engine.reader.bar_shift if self.engine else (0, 0)
+        w, h = round(104 * u), round(88 * u)
+        x, y = int(wx + ex + sx - w), int(wy + ey + sy + 125 * u - h / 2)
+        self.alert.place(x, y, w, h)
+        c = self.alert.c
+        c.delete("all")
+        blink = int(time.monotonic() * 2) % 2
+        bw = max(2, round(3 * u))
+        c.create_rectangle(0, 0, w, h, fill=CARD, outline="")
+        c.create_rectangle(bw / 2, bw / 2, w - bw / 2, h - bw / 2, outline=RED if blink else mix(RED, CARD, 0.45),
+                           width=bw)
+        im = icon if isinstance(icon, Image.Image) else Image.fromarray(icon[:, :, ::-1])
+        k = 54 * u / max(1, im.height)
+        im = im.resize((max(1, round(im.width * k)), max(1, round(im.height * k))), Image.LANCZOS)
+        self.alert_img = ImageTk.PhotoImage(im, master=self.root)
+        c.create_image(w / 2, bw + 4 * u, image=self.alert_img, anchor="n")
+        c.create_text(w / 2, h - bw - 3 * u, text="FINAL ATTACK", anchor="s", fill=RED,
+                      font=font_px(self.fam["xbold"], 12 * u))
 
     def toggle_maps(self):
         self.show_maps = not self.show_maps
