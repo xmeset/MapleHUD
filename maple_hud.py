@@ -70,7 +70,8 @@ MAP_RUNS = 6
 SUMMARY_EVERY = 30
 GAME_GONE = 10
 UI_HALF = 400
-BUFF_HOLD = 4.5
+BUFF_POLL = 0.5
+BUFF_HOLD = 1.3
 KEY = "#0b0a0c"
 
 HEAD_TOP, HEAD_BOT = "#ffd98a", "#f29b38"
@@ -357,6 +358,7 @@ class Engine:
         self.log(f"=== start MapleHUD, liczone poty: {', '.join(potki.in_use)}, tolerancja -{potki.down}/+{potki.up}")
         threading.Thread(target=self._worker, daemon=True).start()
         threading.Thread(target=self._hpmp_worker, daemon=True).start()
+        threading.Thread(target=self._buff_worker, daemon=True).start()
 
     def log(self, msg):
         if getattr(self, "_logf", None):
@@ -422,9 +424,6 @@ class Engine:
                         t0 = time.monotonic()
                         try:
                             self.q.put(("r", self.reader.read(cap), t0))
-                            seen = self._read_buffs(cap)
-                            if seen is not None:
-                                self.q.put(("buff", seen, t0))
                         except Exception as e:
                             m.log_error("reading the screen", e)
                             self.q.put(("e", f"{type(e).__name__}: {e}", t0))
@@ -433,16 +432,35 @@ class Engine:
                 m.log_error("starting to read the screen", e)
                 self.stop.wait(5)
 
-    def _read_buffs(self, cap):
+    def _buff_worker(self):
+        while not self.stop.is_set() and self.buff_table:
+            try:
+                with mss.mss() as sct:
+                    while not self.stop.is_set():
+                        t0 = time.monotonic()
+                        seen = self._read_buffs(sct)
+                        if seen is not None:
+                            self.q.put(("buff", seen, t0))
+                        self.stop.wait(max(0.1, BUFF_POLL - (time.monotonic() - t0)))
+            except Exception as e:
+                m.log_error("reading buffs", e)
+                self.stop.wait(2)
+
+    def _read_buffs(self, sct):
         rect = self.game_rect()
-        if not rect or not self.buff_table:
+        if not rect:
             return None
         wx, wy, ww, wh = rect
         bx, by, bw, bh = buffs.strip_box(ww, wh)
-        shot = self.reader._hide_own(cap.grab(wx + bx, wy + by, bw, bh))
+        shot = grab(sct, wx + bx, wy + by, bw, bh)
         if not shot:
             return None
-        img = shot[0]
+        img, sx, sy = shot
+        for r in self.reader.own_rects:
+            x0, y0 = max(0, r[0] - sx), max(0, r[1] - sy)
+            x1, y1 = min(img.shape[1], r[0] + r[2] - sx), min(img.shape[0], r[1] + r[3] - sy)
+            if x0 < x1 and y0 < y1:
+                img[y0:y1, x0:x1] = 0
         return list(buffs.find(img, wh, self.buff_table))
 
     def buff(self, name):
