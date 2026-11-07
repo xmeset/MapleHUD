@@ -4,6 +4,8 @@ MapleHUD - overlay for MapleStory Classic World
 What it shows (two small panels on both sides of the game's bottom bar):
   left:  LV, map, EXP/hr and % of level/hr, EXP/hr over the last 5 min, time to next level
          square button = end grind and summary, triangle = new grind
+         arrow ^ = best maps, level goal and TODAY (EXP, time, EXP/h, mesos today);
+         click a map = all its runs
   right: meso/h, potion cost/h, net/h (arrow ^ = potion list, your pet and what it drinks)
 
 How to run:

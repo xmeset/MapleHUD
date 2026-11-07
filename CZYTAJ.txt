@@ -4,6 +4,8 @@ MapleHUD - overlay do MapleStory Classic World
 Co pokazuje (dwa male panele po bokach dolnego paska gry):
   lewy:  LV, mapa, EXP/hr i % levelu/hr, EXP/hr z ostatnich 5 min, czas do nastepnego levelu
          przycisk kwadrat = koniec grindu i podsumowanie, trojkat = nowy grind
+         strzalka ^ = najlepsze mapy, cel levelu i DZIS (EXP, czas, EXP/h, meso z dzisiaj);
+         klik w mape = wszystkie jej runy
   prawy: meso/h, koszt potow/h, netto/h (strzalka ^ = lista potow)
 
 Jak uruchomic:
