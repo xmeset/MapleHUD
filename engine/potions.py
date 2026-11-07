@@ -12,6 +12,7 @@ Nothing here reads the screen or the network: read_bar() takes a picture and say
 it. A slot that can't be told is left out rather than guessed.
 """
 import json
+import time
 from collections import namedtuple
 
 import cv2
@@ -316,6 +317,8 @@ def read_bar(img, scale, origin, table, digits, search=SEARCH):
 
 # ---------------------------------------------------------------- potions used
 MAX_STEP = 10               # a drop in one look bigger than this must be seen twice (a misread isn't use)
+MAX_RATE = 1.0              # nobody drinks faster than this many a second: a bigger drop is a misread (a digit
+SETTLE = 30                 # lost under the cursor) or a stack dropped or stored, which becomes the count after this long
 
 
 class PotionTracker:
@@ -324,7 +327,8 @@ class PotionTracker:
     Each slot (by place and name) has a baseline, the count at the last look. A rise (buying,
     looting) is no use and becomes the new baseline. A slot missing from a look (its icon greyed
     while the potion cools down) keeps its baseline until something else takes its place or it
-    shows up elsewhere. Only looks made while tracking runs count;
+    shows up elsewhere. A drop faster than anyone drinks is no use: a misread is ignored, and a count that
+stays there SETTLE seconds (a stack dropped or stored) is taken as the new baseline. Only looks made while tracking runs count;
     any others just set the baselines, and a pause clears them, so town time never counts."""
 
     def __init__(self):
@@ -339,12 +343,15 @@ class PotionTracker:
         self.pending = {}                     # key -> a big drop waiting to be seen a second time
         self.last_use = {}                    # key -> (count after, count before) of the use at the last look
         self.rose = {}                        # key -> count before a rise (undone if the next drop goes below it)
+        self.read_at = {}                     # key -> when its baseline was last read
+        self.odd = {}                         # key -> (count, since) of a drop too fast to be use
 
     def cost(self, prices):
         """Mesos spent on what's been used, given {name: price} (an item without a price costs 0)."""
         return sum(n * prices.get(name, 0) for name, n in self.used.items())
 
-    def observe(self, slots, counting):
+    def observe(self, slots, counting, now=None):
+        now = time.monotonic() if now is None else now
         if slots:                             # a stack moved or replaced: its old place has no say any more
             here = {(s.col, s.row, s.name) for s in slots}
             spots = {(s.col, s.row) for s in slots}
@@ -354,6 +361,8 @@ class PotionTracker:
                 self.pending.pop(key, None)
                 self.last_use.pop(key, None)
                 self.rose.pop(key, None)
+                self.read_at.pop(key, None)
+                self.odd.pop(key, None)
         for s in slots:
             if s.count is None:
                 continue
@@ -366,8 +375,22 @@ class PotionTracker:
                 elif counting and before is not None and count > before:
                     self.rose.setdefault(key, before)
                 self.base[key] = count
+                self.read_at[key] = now
                 self.pending.pop(key, None)
+                self.odd.pop(key, None)
                 continue
+            if before - count > MAX_STEP + MAX_RATE * (now - self.read_at.get(key, now)):
+                seen, since = self.odd.get(key, (None, now))
+                if seen != count:
+                    self.odd[key] = (count, now)
+                elif now - since >= SETTLE:
+                    self.base[key], self.read_at[key] = count, now
+                    self.odd.pop(key, None)
+                    self.pending.pop(key, None)
+                    self.last_use.pop(key, None)
+                    self.rose.pop(key, None)
+                continue
+            self.odd.pop(key, None)
             if before - count > MAX_STEP and self.pending.get(key) != count:
                 self.pending[key] = count
                 continue
@@ -377,6 +400,7 @@ class PotionTracker:
             self.used[s.name] = self.used.get(s.name, 0) + before - count
             self.last_use[key] = (count, before)              # (undone if the next look is `before` again)
             self.base[key] = count
+            self.read_at[key] = now
             self.pending.pop(key, None)
 
 
