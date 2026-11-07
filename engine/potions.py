@@ -322,7 +322,9 @@ class PotionTracker:
     """Counts what's used from the bar: a slot's count going down is a use.
 
     Each slot (by place and name) has a baseline, the count at the last look. A rise (buying,
-    looting) is no use and becomes the new baseline. Only looks made while tracking runs count;
+    looting) is no use and becomes the new baseline. A slot missing from a look (its icon greyed
+    while the potion cools down) keeps its baseline until something else takes its place or it
+    shows up elsewhere. Only looks made while tracking runs count;
     any others just set the baselines, and a pause clears them, so town time never counts."""
 
     def __init__(self):
@@ -343,9 +345,11 @@ class PotionTracker:
         return sum(n * prices.get(name, 0) for name, n in self.used.items())
 
     def observe(self, slots, counting):
-        if slots:                             # a stack moved or gone: its old place has no say any more
+        if slots:                             # a stack moved or replaced: its old place has no say any more
             here = {(s.col, s.row, s.name) for s in slots}
-            for key in [k for k in self.base if k not in here]:
+            spots = {(s.col, s.row) for s in slots}
+            moved = {k[2] for k in here if k not in self.base}
+            for key in [k for k in self.base if k not in here and (k[:2] in spots or k[2] in moved)]:
                 self.base.pop(key)
                 self.pending.pop(key, None)
                 self.last_use.pop(key, None)

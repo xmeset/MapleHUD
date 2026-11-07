@@ -588,7 +588,8 @@ class Engine:
         g = self.run
         maps = list(dict.fromkeys(self.maps_done + ([self.map_cur] if self.map_cur else [])))
         el, vals, info = self._totals(g, ", ".join(maps))
-        info.update(el=el, maps=maps, saved=el >= MIN_MAP_ROW, eq=self.eq())
+        done = info["exp"] > 0 or bool(info["meso"]) or bool(info["used"])
+        info.update(el=el, maps=maps, saved=el >= MIN_MAP_ROW and done, eq=self.eq())
         if info["saved"]:
             head = CSV_HEAD[:1] + ["mapy"] + CSV_HEAD[1:]
             self._csv(SESJE, head, vals)

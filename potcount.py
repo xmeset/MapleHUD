@@ -156,7 +156,7 @@ class PotCounter:
                 self.on_jump(base, reading, "leczenie ze skilla – pomijam")
             return []
         hp_only = dhp > self.up and abs(dmp) <= self.up
-        if hp_only and self._regen(dhp, now):
+        if hp_only and not self._bar_heal(dhp, hpm) and self._regen(dhp, now):
             if self.on_jump:
                 self.on_jump(base, reading, f"regen ({dhp:+} co {REGEN_EVERY:.0f} s) – pomijam")
             return []
@@ -267,6 +267,10 @@ class PotCounter:
         self.paired[name] = self.paired.get(name, 0) + 1
         self._sync()
         return e[3]
+
+    def _bar_heal(self, dhp, hpm):
+        """A rise of exactly a quickslot potion's heal: that potion, never regen."""
+        return any(p["name"] in self.bar and p.get("hp") and amount(p["hp"], hpm) == dhp for p in self.potions)
 
     def _regen(self, dhp, now):
         if dhp in self.regens:
