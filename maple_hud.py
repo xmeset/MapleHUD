@@ -1804,9 +1804,10 @@ class HUD:
         u = wh / 1080
         ex, ey, _ = potions.bar_estimate(ww, wh)
         sx, sy = self.engine.reader.bar_shift if self.engine else (0, 0)
-        px, t, g = round(40 * u), max(2, round(3 * u)), max(1, round(2 * u))
+        px, t, g = round(48 * u), max(2, round(3 * u)), max(1, round(2 * u))
         side = px + 2 * (t + g)
-        x, y = int(wx + ex + sx - 50 * u - side / 2), int(wy + ey + sy + 125 * u - side / 2)
+        bottom = (potions.SLOT_Y[2] + potions.SLOT_H) * wh / 2880
+        x, y = int(wx + ex + sx - 4 * u - side), int(wy + ey + sy + bottom - side + t + g)
         self.alert.place(x, y, side, side)
         c = self.alert.c
         c.delete("all")
