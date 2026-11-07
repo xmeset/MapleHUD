@@ -74,6 +74,8 @@ EN = {
     "najlepszy z {}": "best of {}",
     "{} runów · {} · śr. {}/HR": "{} runs · {} · avg {}/HR",
     "{}–{} z {}": "{}–{} of {}",
+    "+{} krótkie": "+{} short",
+    "ukryj krótkie": "hide short",
     "‹ nowsze": "‹ newer",
     "starsze ›": "older ›",
     "MAPY": "MAPS",

@@ -851,7 +851,7 @@ class Panel:
         self.c.bind("<Button-3>", hud.menu_at)
         self.actions = {"b_toggle": hud.toggle, "b_end": hud.finish, "b_more": hud.toggle_details,
                         "b_close": hud.close, "body": hud.toggle_details, "b_maps": hud.toggle_maps,
-                        "goal": hud.set_goal}
+                        "goal": hud.set_goal, "mshort": hud.toggle_short}
         self.c.bind("<ButtonRelease-1>", self._click)
         self.c.bind("<Motion>", self._hover)
 
@@ -1086,7 +1086,7 @@ class HUD:
         self.mapsp = Panel(self, root, "maps")
         self.mapsp.win.withdraw()
         self.show_maps = False
-        self.map_open, self.map_names, self.map_page = None, [], 0
+        self.map_open, self.map_names, self.map_page, self.map_short = None, [], 0, False
         self.maps_cache = (None, [])
         self.maps_top = None
         self.summary = None
@@ -1681,9 +1681,16 @@ class HUD:
         hours = sum(r["hours"] for r in runs)
         exp = sum(r["exp_h"] * r["hours"] for r in runs)
         net = sum((r["net_h"] or 0) * r["hours"] for r in runs)
+        short = sum(1 for r in runs if r["hours"] < MAP_MIN_H and not r["now"])
         head = T("{} runów · {} · śr. {}/HR").format(len(runs), fmt_time(hours * 3600),
                                                        fmt(exp / hours if hours else None))
-        c.create_text(16 * sc, y + 7 * sc, text=head, font=self.f("semi", 7.5), fill=LABEL, anchor="w")
+        tid = c.create_text(16 * sc, y + 7 * sc, text=head, font=self.f("semi", 7.5), fill=LABEL, anchor="w")
+        if short:
+            more = T("ukryj krótkie") if self.map_short else T("+{} krótkie").format(short)
+            c.create_text(c.bbox(tid)[2] + 6 * sc, y + 7 * sc, text=more, font=self.f("semi", 7.5), fill=ORANGE,
+                          anchor="w", tags=("mshort",))
+        if not self.map_short:
+            runs = [r for r in runs if r["hours"] >= MAP_MIN_H or r["now"]]
         c.create_text(w - 12 * sc, y + 7 * sc, text=("+" if net >= 0 else "−") + fmt(abs(net)) + " meso",
                       font=self.f("semi", 7.5), fill=GREEN if net >= 0 else RED, anchor="e")
         y += round(16 * sc)
@@ -1695,7 +1702,7 @@ class HUD:
         for r in runs[first:first + MAP_RUNS]:
             c.create_line(16 * sc, y, w - 12 * sc, y, fill=mix(BODY, BORDER, 0.5))
             when = T("teraz") if r["now"] else ".".join(r["date"].split("-")[:0:-1]) + " " + r["start"]
-            col = ORANGE if r["now"] else TEXT
+            col = ORANGE if r["now"] else LABEL if r["hours"] < MAP_MIN_H else TEXT
             c.create_text(16 * sc, y + 8 * sc, text=when, font=self.f("semi", 8), fill=col, anchor="w")
             sub = " · ".join(x for x in (f"LV {r['lv']}" if r["lv"] else "", fmt_time(r["hours"] * 3600)) if x)
             c.create_text(16 * sc, y + 18 * sc, text=sub, font=self.f("reg", 7.5), fill=LABEL, anchor="w")
@@ -1732,7 +1739,10 @@ class HUD:
     def open_map(self, i):
         name = self.map_names[i] if i < len(self.map_names) else None
         self.map_open = None if name == self.map_open else name
-        self.map_page = 0
+        self.map_page, self.map_short = 0, False
+
+    def toggle_short(self):
+        self.map_short, self.map_page = not self.map_short, 0
 
     def map_page_by(self, step):
         self.map_page = max(0, self.map_page + step)
