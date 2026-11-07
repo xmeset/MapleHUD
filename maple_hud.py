@@ -64,7 +64,7 @@ TRANSIT = 300
 MAP_MIN_H = 15 / 60
 NOW_MIN_H = 5 / 60
 TOP_MAPS = 3
-MAP_RUNS = 8
+MAP_RUNS = 6
 SUMMARY_EVERY = 30
 GAME_GONE = 10
 UI_HALF = 400
@@ -858,7 +858,7 @@ class Panel:
     def _hit(self, e):
         for item in reversed(self.c.find_overlapping(e.x - 1, e.y - 1, e.x + 1, e.y + 1)):
             for tag in self.c.gettags(item):
-                if tag in self.actions or tag.startswith(("pet", "map:")):
+                if tag in self.actions or tag.startswith(("pet", "map:", "mpg:")):
                     return tag
         return None
 
@@ -870,6 +870,8 @@ class Panel:
             self.hud.pet_menu(tag[7:], e)
         elif tag and tag.startswith("map:"):
             self.hud.open_map(int(tag[4:]))
+        elif tag and tag.startswith("mpg:"):
+            self.hud.map_page_by(int(tag[4:]))
         elif tag:
             self.actions[tag]()
 
@@ -1084,7 +1086,7 @@ class HUD:
         self.mapsp = Panel(self, root, "maps")
         self.mapsp.win.withdraw()
         self.show_maps = False
-        self.map_open, self.map_names = None, []
+        self.map_open, self.map_names, self.map_page = None, [], 0
         self.maps_cache = (None, [])
         self.maps_top = None
         self.summary = None
@@ -1686,23 +1688,36 @@ class HUD:
                       font=self.f("semi", 7.5), fill=GREEN if net >= 0 else RED, anchor="e")
         y += round(16 * sc)
         runs = sorted(runs, key=lambda r: (r["now"], r["date"], r["start"]), reverse=True)
-        for r in runs[:MAP_RUNS]:
+        pages = max(1, -(-len(runs) // MAP_RUNS))
+        self.map_page = min(self.map_page, pages - 1)
+        first = self.map_page * MAP_RUNS
+        rh = round(25 * sc)
+        for r in runs[first:first + MAP_RUNS]:
+            c.create_line(16 * sc, y, w - 12 * sc, y, fill=mix(BODY, BORDER, 0.5))
             when = T("teraz") if r["now"] else ".".join(r["date"].split("-")[:0:-1]) + " " + r["start"]
-            sub = " · ".join(x for x in (when, fmt_time(r["hours"] * 3600), f"LV {r['lv']}" if r["lv"] else "") if x)
-            c.create_text(16 * sc, y + 7 * sc, text=sub, font=self.f("reg", 7.5), fill=ORANGE if r["now"] else TEXT,
-                          anchor="w")
-            c.create_text(cx1, y + 7 * sc, text=fmt(r["exp_h"]), font=self.f("semi", 7.5), fill=TEXT, anchor="e")
+            col = ORANGE if r["now"] else TEXT
+            c.create_text(16 * sc, y + 8 * sc, text=when, font=self.f("semi", 8), fill=col, anchor="w")
+            sub = " · ".join(x for x in (f"LV {r['lv']}" if r["lv"] else "", fmt_time(r["hours"] * 3600)) if x)
+            c.create_text(16 * sc, y + 18 * sc, text=sub, font=self.f("reg", 7.5), fill=LABEL, anchor="w")
+            c.create_text(cx1, y + 8 * sc, text=fmt(r["exp_h"]), font=self.f("semi", 8.5), fill=TEXT, anchor="e")
             if r.get("best15"):
-                c.create_text(cx2, y + 7 * sc, text=f"15m {fmt(r['best15'])}", font=self.f("reg", 7.5), fill=LABEL,
+                c.create_text(cx1, y + 18 * sc, text=f"15m {fmt(r['best15'])}", font=self.f("reg", 7.5), fill=LABEL,
                               anchor="e")
+            c.create_text(cx2, y + rh / 2, text=f"{r['pct_h']:.1f}%" if r["pct_h"] else "—",
+                          font=self.f("semi", 8.5), fill=TEXT, anchor="e")
             if r["net_h"] is not None:
                 n = r["net_h"] * r["hours"]
-                c.create_text(w - 12 * sc, y + 7 * sc, text=("+" if n >= 0 else "−") + fmt(abs(n)),
-                              font=self.f("semi", 7.5), fill=GREEN if n >= 0 else RED, anchor="e")
-            y += round(15 * sc)
-        if len(runs) > MAP_RUNS:
-            c.create_text(16 * sc, y + 7 * sc, text=T("+{} starszych").format(len(runs) - MAP_RUNS),
-                          font=self.f("reg", 7.5), fill=LABEL, anchor="w")
+                c.create_text(w - 12 * sc, y + rh / 2, text=("+" if n >= 0 else "−") + fmt(abs(n)),
+                              font=self.f("semi", 8.5), fill=GREEN if n >= 0 else RED, anchor="e")
+            y += rh
+        if pages > 1:
+            y += round(2 * sc)
+            mid = T("{}–{} z {}").format(first + 1, min(first + MAP_RUNS, len(runs)), len(runs))
+            c.create_text(w / 2, y + 7 * sc, text=mid, font=self.f("reg", 7.5), fill=LABEL)
+            for step, x, text, anchor in ((-1, 16 * sc, T("‹ nowsze"), "w"), (1, w - 12 * sc, T("starsze ›"), "e")):
+                ok = 0 <= self.map_page + step < pages
+                c.create_text(x, y + 7 * sc, text=text, font=self.f("semi", 8), anchor=anchor,
+                              fill=ORANGE if ok else mix(BODY, LABEL, 0.4), tags=(f"mpg:{step}",) if ok else ())
             y += round(15 * sc)
         return y + round(4 * sc)
 
@@ -1717,6 +1732,10 @@ class HUD:
     def open_map(self, i):
         name = self.map_names[i] if i < len(self.map_names) else None
         self.map_open = None if name == self.map_open else name
+        self.map_page = 0
+
+    def map_page_by(self, step):
+        self.map_page = max(0, self.map_page + step)
 
     def set_goal(self):
         v = simpledialog.askinteger(T("Cel levelu…"), T("Docelowy poziom (0 = brak):"), parent=self.root, minvalue=0,
