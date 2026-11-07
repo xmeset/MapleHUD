@@ -1,6 +1,7 @@
 import csv
 import ctypes
 import json
+import math
 import os
 import queue
 import re
@@ -69,7 +70,8 @@ MAP_RUNS = 6
 SUMMARY_EVERY = 30
 GAME_GONE = 10
 UI_HALF = 400
-BUFF_HOLD = 3.5
+BUFF_HOLD = 4.5
+KEY = "#0b0a0c"
 
 HEAD_TOP, HEAD_BOT = "#ffd98a", "#f29b38"
 HEAD_TEXT = "#5b2a07"
@@ -441,12 +443,11 @@ class Engine:
         if not shot:
             return None
         img = shot[0]
-        return {name: img[y:y + h, x:x + w].copy() for name, (x, y, w, h) in buffs.find(img, wh, self.buff_table).items()}
+        return list(buffs.find(img, wh, self.buff_table))
 
     def buff(self, name):
-        """The icon (BGR) of a buff showing now (or a moment ago), else None."""
-        seen = self.buff_seen.get(name)
-        return seen[0] if seen and time.monotonic() - seen[1] < BUFF_HOLD else None
+        """Is the buff showing now (or was it a moment ago)?"""
+        return time.monotonic() - self.buff_seen.get(name, -BUFF_HOLD) < BUFF_HOLD
 
     def _hpmp_worker(self):
         while not self.stop.is_set():
@@ -635,10 +636,10 @@ class Engine:
             if kind == "e":
                 self.status, self.error = r, True
             elif kind == "buff":
-                for name, icon in r.items():
+                for name in r:
                     if not self.buff(name):
                         self.log(f"buff: {name}")
-                    self.buff_seen[name] = (icon, at)
+                    self.buff_seen[name] = at
             elif kind == "hp":
                 self.hpmp, self.hpmp_at = r, at
                 self.counter.feed(r, self.counting(), at)
@@ -1121,7 +1122,10 @@ class HUD:
         self.show_maps = False
         self.alert = Panel(self, root, "alert")
         self.alert.win.withdraw()
-        self.alert_on, self.alert_img = False, None
+        self.alert.win.configure(bg=KEY)
+        self.alert.win.attributes("-transparentcolor", KEY)
+        self.alert.c.config(bg=KEY)
+        self.alert_on = False
         self.map_open, self.map_names, self.map_page, self.map_short = None, [], 0, False
         self.maps_cache = (None, [])
         self.maps_top = None
@@ -1766,12 +1770,9 @@ class HUD:
         return y + round(4 * sc)
 
     def draw_alert(self):
-        if self.engine:
-            icon = self.engine.buff("Final Attack")
-        else:
-            icon = Image.open(self.cfg["demo_buff"]).convert("RGB") if self.cfg.get("demo_buff") else None
+        on = (self.engine.buff("Final Attack") if self.engine else bool(self.cfg.get("demo_buff")))
         rect = self.game_rect()
-        on = icon is not None and rect is not None
+        on = on and rect is not None
         if on != self.alert_on:
             self.alert_on = on
             if not on:
@@ -1785,23 +1786,16 @@ class HUD:
         u = wh / 1080
         ex, ey, _ = potions.bar_estimate(ww, wh)
         sx, sy = self.engine.reader.bar_shift if self.engine else (0, 0)
-        w, h = round(104 * u), round(88 * u)
-        x, y = int(wx + ex + sx - w), int(wy + ey + sy + 125 * u - h / 2)
-        self.alert.place(x, y, w, h)
+        px, t, g = round(40 * u), max(2, round(3 * u)), max(1, round(2 * u))
+        side = px + 2 * (t + g)
+        x, y = int(wx + ex + sx - 50 * u - side / 2), int(wy + ey + sy + 125 * u - side / 2)
+        self.alert.place(x, y, side, side)
         c = self.alert.c
         c.delete("all")
-        blink = int(time.monotonic() * 2) % 2
-        bw = max(2, round(3 * u))
-        c.create_rectangle(0, 0, w, h, fill=CARD, outline="")
-        c.create_rectangle(bw / 2, bw / 2, w - bw / 2, h - bw / 2, outline=RED if blink else mix(RED, CARD, 0.45),
-                           width=bw)
-        im = icon if isinstance(icon, Image.Image) else Image.fromarray(icon[:, :, ::-1])
-        k = 54 * u / max(1, im.height)
-        im = im.resize((max(1, round(im.width * k)), max(1, round(im.height * k))), Image.LANCZOS)
-        self.alert_img = ImageTk.PhotoImage(im, master=self.root)
-        c.create_image(w / 2, bw + 4 * u, image=self.alert_img, anchor="n")
-        c.create_text(w / 2, h - bw - 3 * u, text="FINAL ATTACK", anchor="s", fill=RED,
-                      font=font_px(self.fam["xbold"], 12 * u))
+        pulse = 0.5 + 0.5 * math.sin(time.monotonic() * 2 * math.pi)
+        rrect(c, t / 2, t / 2, side - t / 2, side - t / 2, round(7 * u), outline=mix(RED, "#ffb4a8", pulse),
+              width=t, fill="")
+        c.create_image(side / 2, side / 2, image=self.icon("Final Attack", px))
 
     def toggle_maps(self):
         self.show_maps = not self.show_maps
