@@ -78,7 +78,7 @@ class PotCounter:
         self.base = None
 
     def pet_on_bar(self, k):
-        cands = [n for n in self.paired if self._stat(n) == k]
+        cands = [n for n in self.paired if self._stat(n) == k and n == self.pet_default[k]]
         best = max(cands, key=lambda n: self.paired[n], default=None)
         if best and self.paired[best] >= PET_PAIRS and self.paired[best] >= 2 * self.alone[k]:
             return best
@@ -111,6 +111,8 @@ class PotCounter:
             if n:
                 self.bank[n] = self.used.get(n, 0)
         self.pet_default[k], self.alone[k] = name, 0
+        for n in [n for n in self.paired if self._stat(n) == k]:
+            del self.paired[n]
         self.recent = [e for e in self.recent if e[1] != k]
         self._sync()
 
