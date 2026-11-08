@@ -12,7 +12,7 @@ import numpy as np
 REF_H = 1080
 BLUR = 4
 STRIP_W, STRIP_H = 0.55, 110    # share of the window's width (from its right edge), px tall at 1080 p
-ACCEPT = 0.76                   # how alike (correlation) a match must be at least
+ACCEPT = 0.80                   # how alike (correlation) a match must be at least
 BANDS = 6                       # the icon is compared in this many bands, top to bottom
 FRAME_DARK, FRAME_STEP = 120, 40    # the frame is darker than this, and this much darker than just inside it
 
@@ -106,13 +106,13 @@ def match(img, item):
 
 
 def find(img, window_h, table):
-    """{name: (x, y, w, h) in img} of the known buffs showing on img (a strip of the screen)."""
+    """{name: (x, y, w, h, similarity) in img} of the known buffs showing on img (a strip of the screen)."""
     k = REF_H / window_h
     ref = img if abs(k - 1) < 0.01 else cv2.resize(img, None, fx=k, fy=k, interpolation=cv2.INTER_AREA)
     found = {}
     for name, item in table.items.items():
         m = match(ref, item)
         if m and m[0] >= item.get("accept", ACCEPT):
-            _, x, y = m
-            found[name] = (int(x / k), int(y / k), int(item["w"] / k), int(item["h"] / k))
+            s, x, y = m
+            found[name] = (int(x / k), int(y / k), int(item["w"] / k), int(item["h"] / k), s)
     return found

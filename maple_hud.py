@@ -53,6 +53,7 @@ POTKI = HERE / "potki.json"
 POLL = 1.5
 HPMP_POLL = 0.25
 SESJA = DATA / "sesja.log"
+BUFF_SHOTS = DATA / "buff_debug"
 MAPY = DATA / "mapy.csv"
 SESJE = DATA / "sesje.csv"
 IDLE_GAP = 600
@@ -433,6 +434,7 @@ class Engine:
                 self.stop.wait(5)
 
     def _buff_worker(self):
+        self._buff_prev = set()
         while not self.stop.is_set() and self.buff_table:
             try:
                 with mss.mss() as sct:
@@ -461,7 +463,23 @@ class Engine:
             x1, y1 = min(img.shape[1], r[0] + r[2] - sx), min(img.shape[0], r[1] + r[3] - sy)
             if x0 < x1 and y0 < y1:
                 img[y0:y1, x0:x1] = 0
-        return list(buffs.find(img, wh, self.buff_table))
+        found = buffs.find(img, wh, self.buff_table)
+        for name in set(found) - self._buff_prev:
+            self._keep_buff_shot(name, img, found[name])
+        self._buff_prev = set(found)
+        return {name: round(b[4], 2) for name, b in found.items()}
+
+    def _keep_buff_shot(self, name, img, box):
+        try:
+            BUFF_SHOTS.mkdir(exist_ok=True)
+            x, y, w, h, s = box
+            crop = img[max(0, y - 20):y + h + 20, max(0, x - 3 * w):x + 3 * w]
+            Image.fromarray(crop[:, :, ::-1].copy()).save(
+                BUFF_SHOTS / f"{time.strftime('%m%d_%H%M%S')}_{name.replace(' ', '')}_{s:.2f}.png")
+            for old in sorted(BUFF_SHOTS.glob("*.png"))[:-40]:
+                old.unlink()
+        except Exception as e:
+            m.log_error("saving a buff picture", e)
 
     def buff(self, name):
         """Is the buff showing now (or was it a moment ago)?"""
@@ -656,7 +674,7 @@ class Engine:
             elif kind == "buff":
                 for name in r:
                     if not self.buff(name):
-                        self.log(f"buff: {name}")
+                        self.log(f"buff: {name} ({r[name]:.2f})")
                     self.buff_seen[name] = at
             elif kind == "hp":
                 self.hpmp, self.hpmp_at = r, at
