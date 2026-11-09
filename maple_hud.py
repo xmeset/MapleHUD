@@ -325,6 +325,7 @@ class Engine:
         self.meso = MesoCounter()
         self.bar = potions.PotionTracker()
         self.bar_names, self.bar_counts = set(), {}
+        self.pre_bar = {}
         self.map_cur, self.map_cand, self.seg = None, None, None
         self.away = None
         self.set_counter(potki)
@@ -393,7 +394,7 @@ class Engine:
     def used(self):
         names = dict.fromkeys(list(self.counter.used) + list(self.bar.used) + list(self.bar_names))
         names = dict.fromkeys(list(names) + list(self.counter.hidden))
-        used = {n: (self.bar.used.get(n, 0) if n in self.bar_names else self.counter.used.get(n, 0)) +
+        used = {n: (self.bar.used.get(n, 0) + self.pre_bar.get(n, 0) if n in self.bar_names else self.counter.used.get(n, 0)) +
                 self.counter.hidden.get(n, 0) for n in names}
         used.update((n, self.counter.other[k]) for n, k in OTHER.items() if self.counter.other[k])
         return used
@@ -767,6 +768,9 @@ class Engine:
                 if n not in self.bar_names:
                     self.bar_names.add(n)
                     self.bar.used.setdefault(n, 0)
+                    if self.counter.used.get(n):
+                        self.pre_bar[n] = self.counter.used[n]
+                        self.log(f"quickslot: {n} – wczesniejsze {self.counter.used[n]} zostaja w liczeniu")
         before = dict(self.bar.used)
         self.bar.observe(slots, self.counting())
         for n, c in self.bar.used.items():
@@ -817,7 +821,7 @@ class Engine:
         self.session.reset()
         self.counter.reset()
         self.bar.reset()
-        self.bar_names = set()
+        self.bar_names, self.pre_bar = set(), {}
         self.meso.gained = 0
         self.meso.cut(time.monotonic())
         self.reader.look_again()
