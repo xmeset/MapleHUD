@@ -166,6 +166,7 @@ DIGIT_X0 = 3                # the first digit's left edge
 DIGIT_TAU = 0.60            # a digit is taken at or above this match (true ones score 0.7 to 0.97)
 DIGIT_DOUBT = 0.56          # between this and DIGIT_TAU nothing is certain: no number rather than a guess
 MAX_DIGITS = 4
+DIGIT_LEAD = 0.06           # ...and must beat the next best digit there by this much (a 4 over the icon can pass for an 8)
 
 
 Glyph = namedtuple("Glyph", "template mask")    # mask: 1 where the digit looks the same on every item, 0 elsewhere
@@ -212,12 +213,20 @@ def _decode(maps, widths, j, x0):
     sure is False when a digit is neither clearly there nor clearly not."""
     text, total, x, sure = "", 0.0, x0, True
     for _ in range(MAX_DIGITS):
-        best = (-1.0, None, 0)
+        best, second = (-1.0, None, 0), -1.0
         for ch, m in maps.items():
+            top = (-1.0, None, 0)
             for px in range(x - 1, x + 2):
                 i = px + PAD
-                if 0 <= i < m.shape[1] and m[j, i] > best[0]:
-                    best = (float(m[j, i]), ch, px)
+                if 0 <= i < m.shape[1] and m[j, i] > top[0]:
+                    top = (float(m[j, i]), ch, px)
+            if top[0] > best[0]:
+                best, second = top, best[0]
+            else:
+                second = max(second, top[0])
+        if best[0] >= DIGIT_TAU and best[0] - second < DIGIT_LEAD:
+            total, sure = total + best[0], False
+            break
         if best[0] >= DIGIT_TAU:
             text, total, x = text + best[1], total + best[0], best[2] + widths[best[1]]
         else:

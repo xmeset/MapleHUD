@@ -2298,7 +2298,7 @@ class ScreenReader:
                 self.mesos_box, self.window_box = None, False
                 self.mesos_fails, self.next_outline = 0, 0.0
         if now >= self.next_scan:                     # look over the whole window
-            self.next_scan = now + (SCAN_SECONDS if self.mesos_box else 2)
+            self.next_scan = now + (SCAN_SECONDS if self.mesos_box and not self.mesos_fails else 1)
             with self._part("window scan"):
                 shot = self._hide_own(capture.grab(wx, wy, ww, wh))
                 if shot:
