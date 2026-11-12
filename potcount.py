@@ -22,6 +22,9 @@ def amount(value, maximum):
     return 0
 
 
+PET_DOUBT = 4              # this many pet heals in a row that fit another potion better: the pet is set wrong
+
+
 class PotCounter:
     """Counts potions from jumps of HP/MP read off the status bar.
 
@@ -76,6 +79,8 @@ class PotCounter:
         self.waiting, self.confirmed = [], {}
         self.pet_mode = {"hp": None, "mp": None}
         self.base = None
+        self.pet_seen = {"hp": [], "mp": []}
+        self.pet_doubt = {"hp": None, "mp": None}
 
     def pet_on_bar(self, k):
         cands = [n for n in self.paired if self._stat(n) == k and n == self.pet_default[k]]
@@ -111,6 +116,7 @@ class PotCounter:
             if n:
                 self.bank[n] = self.used.get(n, 0)
         self.pet_default[k], self.alone[k] = name, 0
+        self.pet_seen[k], self.pet_doubt[k] = [], None
         for n in [n for n in self.paired if self._stat(n) == k]:
             del self.paired[n]
         self.recent = [e for e in self.recent if e[1] != k]
@@ -163,8 +169,12 @@ class PotCounter:
                 self.on_jump(base, reading, f"regen ({dhp:+} co {REGEN_EVERY:.0f} s) – pomijam")
             return []
         combo = self._explain(dhp, hp == hpm, hpm, dmp, mp == mpm, mpm, now) if counting else None
+        loose = False
         if counting and not combo:
             combo = self._explain(dhp, hp == hpm, hpm, dmp, mp == mpm, mpm, now, True)
+            loose = bool(combo)
+        if combo:
+            self._check_pet(combo, loose, {"hp": (dhp, hp == hpm, hpm), "mp": (dmp, mp == mpm, mpm)})
         got = {k: d for k, d in (("hp", dhp), ("mp", dmp)) if d > self.up} if counting and not combo else {}
         for k, d in got.items():
             self.other[k] += d
@@ -190,6 +200,28 @@ class PotCounter:
         self.events.append((now, names))
         del self.events[:-50]
         return names
+
+    def _check_pet(self, combo, loose, deltas):
+        """Notices a pet set to the wrong potion: its heals keep fitting another potion, not its own."""
+        names = [p["name"] for p in combo]
+        for k, (d, capped, mx) in deltas.items():
+            pet = self.pet(k)
+            if not pet or pet not in names or capped or d <= self.up:
+                continue
+            alt = None
+            if loose:
+                fits = [(abs(d - amount(p[k], mx)), p["name"]) for p in self.potions
+                        if p["name"] != pet and p.get(k) and self._fits(d, amount(p[k], mx), False)[0]]
+                alt = min(fits)[1] if fits else None
+            seen = self.pet_seen[k]
+            seen.append(alt)
+            del seen[:-PET_DOUBT]
+            if len(seen) == PET_DOUBT and alt and all(a == alt for a in seen):
+                if self.pet_doubt[k] != alt and self.on_note:
+                    self.on_note(f"pet {k.upper()}: leczy jak {alt}, a ustawione {pet} – sprawdz ustawienie peta")
+                self.pet_doubt[k] = alt
+            elif seen[-2:] == [None, None]:
+                self.pet_doubt[k] = None
 
     def _pair(self, combo, now):
         self.drops = [d for d in self.drops if now - d[0] <= PAIR]

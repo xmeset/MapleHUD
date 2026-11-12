@@ -235,6 +235,16 @@ def mix(a, b, t):
     return "#" + "".join(f"{round(x + (y - x) * t):02x}" for x, y in zip(ca, cb))
 
 
+def no_activate(win):
+    """A click on the window doesn't take the keyboard from the game."""
+    try:
+        hwnd = ctypes.windll.user32.GetParent(win.winfo_id()) or win.winfo_id()
+        style = ctypes.windll.user32.GetWindowLongW(hwnd, -20)
+        ctypes.windll.user32.SetWindowLongW(hwnd, -20, style | 0x08000000)
+    except Exception:
+        pass
+
+
 def rrect(c, x0, y0, x1, y1, r, **kw):
     pts = [x0 + r, y0, x1 - r, y0, x1, y0, x1, y0 + r, x1, y1 - r, x1, y1, x1 - r, y1,
            x0 + r, y1, x0, y1, x0, y1 - r, x0, y0 + r, x0, y0]
@@ -893,7 +903,8 @@ class Engine:
                     cost_h=cost_h, net_h=net_h, rows=rows, hp_h=hp_h, mp_h=mp_h, status=flash or self.status,
                     flash=bool(flash), estimated=t.estimated, waiting=s.waiting, on=s.on,
                     hpmp=self.hpmp if now - self.hpmp_at < 3 else None, counting=self.counting(),
-                    last=(now - last[0], last[1]) if last else None, live=live, eq=self.eq())
+                    last=(now - last[0], last[1]) if last else None, live=live, eq=self.eq(),
+                    pet_doubt={k: v for k, v in self.counter.pet_doubt.items() if v})
 
 
 def demo_snapshot():
@@ -925,7 +936,7 @@ class Panel:
         self.c.bind("<Button-3>", hud.menu_at)
         self.actions = {"b_toggle": hud.toggle, "b_end": hud.finish, "b_more": hud.toggle_details,
                         "b_close": hud.close, "body": hud.toggle_details, "b_maps": hud.toggle_maps,
-                        "goal": hud.set_goal, "mshort": hud.toggle_short}
+                        "goal": hud.set_goal, "mshort": hud.toggle_short, "timer": hud.start_timer}
         self.c.bind("<ButtonRelease-1>", self._click)
         self.c.bind("<Motion>", self._hover)
 
@@ -1166,6 +1177,12 @@ class HUD:
         self.alert.win.attributes("-transparentcolor", KEY)
         self.alert.c.config(bg=KEY)
         self.alert_on = False
+        self.timer = Panel(self, root, "timer")
+        self.timer.win.withdraw()
+        self.timer.win.configure(bg=KEY)
+        self.timer.win.attributes("-transparentcolor", KEY)
+        self.timer.c.config(bg=KEY)
+        self.timer_end, self.timer_rang, self.timer_on = None, False, False
         self.map_open, self.map_names, self.map_page, self.map_short = None, [], 0, False
         self.maps_cache = (None, [])
         self.maps_top = None
@@ -1188,6 +1205,8 @@ class HUD:
         self.menu.add_command(label=T("Szczegóły potów"), command=self.toggle_details)
         self.menu.add_command(label=T("Porównanie map"), command=self.toggle_maps)
         self.menu.add_command(label=T("Cel levelu…"), command=self.set_goal)
+        self.timer_menu = tk.Menu(self.menu, tearoff=0)
+        self.menu.add_cascade(label=T("Minutnik (zbieranie dropów)"), menu=self.timer_menu)
         self.pet_menus = {}
         for k, lab in (("hp", "Pet: pot HP"), ("mp", "Pet: pot MP")):
             self.pet_menus[k] = tk.Menu(self.menu, tearoff=0)
@@ -1255,7 +1274,7 @@ class HUD:
 
     def shown(self):
         return (self.left, self.right) + ((self.details,) if self.show_details else ()) + \
-            ((self.mapsp,) if self.show_maps else ()) + ((self.summ,) if self.summary else ()) +             ((self.alert,) if self.alert_on else ())
+            ((self.mapsp,) if self.show_maps else ()) + ((self.summ,) if self.summary else ()) +             ((self.alert,) if self.alert_on else ()) + ((self.timer,) if self.timer_on else ())
 
     def _game_closed(self):
         if self.demo or not self.engine:
@@ -1290,6 +1309,7 @@ class HUD:
             if self.summary:
                 self.draw_summary(self.summary)
             self.draw_alert()
+            self.draw_timer()
             if self.engine:
                 rects = [p.rect() for p in self.shown()]
                 self.engine.reader.own_rects = tuple(r for r in rects if r)
@@ -1407,6 +1427,8 @@ class HUD:
             col = HEAD_TEXT
         else:
             info, col = T("nie widzę HP/MP"), RED
+        if s.get("pet_doubt"):
+            info, col = T("pet pije {}?").format(" / ".join(s["pet_doubt"].values())), RED
         c.create_text(x - 4 * sc, hh / 2, text=info, font=self.f("semi", 8.5), fill=col, anchor="e")
         net = s["net_h"]
         meso = fmt(s["meso_h"]) if s["meso_seen"] else T("otwórz eq")
@@ -1427,6 +1449,8 @@ class HUD:
             msgs.append(T("Nie widzę HP/MP na pasku – poty nie są liczone."))
         elif not s["counting"]:
             msgs.append(T("Poty liczone dopiero gdy idzie EXP."))
+        for k, alt in (s.get("pet_doubt") or {}).items():
+            msgs.append(T("Pet {}: leczy jak {} – sprawdź, co ustawione.").format(k.upper(), alt))
         if s["last"]:
             ago, names = s["last"]
             msgs.append(T("Ostatnio: {} ({} temu)").format(" + ".join(names), fmt_time(ago)))
@@ -1857,6 +1881,76 @@ class HUD:
     def map_page_by(self, step):
         self.map_page = max(0, self.map_page + step)
 
+    def timer_secs(self):
+        v = self.cfg.get("timer_s")
+        return v if isinstance(v, int) and v > 0 else 90
+
+    def start_timer(self):
+        self.timer_end, self.timer_rang = time.monotonic() + self.timer_secs(), False
+
+    def stop_timer(self):
+        self.timer_end = None
+
+    def set_timer_secs(self):
+        v = simpledialog.askinteger(T("Minutnik (zbieranie dropów)"), T("Ile sekund (np. 90 = 1:30):"), parent=self.root,
+                                    minvalue=5, maxvalue=3600, initialvalue=self.timer_secs())
+        if v:
+            self.cfg["timer_s"] = v
+            self.save()
+
+    def toggle_timer_sound(self):
+        self.cfg["timer_sound"] = not self.cfg.get("timer_sound", True)
+        self.save()
+
+    def _ring(self):
+        if self.cfg.get("timer_sound", True):
+            try:
+                import winsound
+                winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
+            except Exception:
+                pass
+
+    def draw_timer(self):
+        rect = self.game_rect()
+        on = self.timer_end is not None and rect is not None
+        if on != self.timer_on:
+            self.timer_on = on
+            if not on:
+                self.timer.win.withdraw()
+            elif self.visible:
+                self.timer.win.deiconify()
+                self.timer.win.attributes("-topmost", True)
+                no_activate(self.timer.win)
+        if not on:
+            return
+        left = self.timer_end - time.monotonic()
+        if left <= 0 and not self.timer_rang:
+            self.timer_rang = True
+            self._ring()
+        wx, wy, ww, wh = rect
+        u = wh / 1080
+        ex, ey, _ = potions.bar_estimate(ww, wh)
+        sx, sy = self.engine.reader.bar_shift if self.engine else (0, 0)
+        done = left <= 0
+        side, h = round(58 * u), round(26 * u)
+        w = round(84 * u) if done else side
+        top = potions.SLOT_Y[1] * wh / 2880
+        x, y = int(wx + ex + sx - 4 * u - w), int(wy + ey + sy + top)
+        self.timer.place(x, y, w, h)
+        c = self.timer.c
+        c.delete("all")
+        t = max(2, round(2 * u))
+        if done:
+            pulse = 0.5 + 0.5 * math.sin(time.monotonic() * 2 * math.pi)
+            rrect(c, t / 2, t / 2, w - t / 2, h - t / 2, round(7 * u), outline=mix(GOLD, "#fff1a8", pulse),
+                  width=t, fill=mix("#fff4c2", GOLD, pulse * 0.5), tags="timer")
+            c.create_text(w / 2, h / 2, text=T("ZBIERAJ!"), font=self.f("semi", 9), fill=HEAD_TEXT, tags="timer")
+        else:
+            rrect(c, t / 2, t / 2, w - t / 2, h - t / 2, round(7 * u), outline=BORDER, width=t, fill=CARD, tags="timer")
+            secs = int(math.ceil(left))
+            c.create_text(w / 2, h / 2, text=f"{secs // 60}:{secs % 60:02d}", font=self.f("semi", 10),
+                          fill=TEXT, tags="timer")
+
     def set_goal(self):
         v = simpledialog.askinteger(T("Cel levelu…"), T("Docelowy poziom (0 = brak):"), parent=self.root, minvalue=0,
                                     maxvalue=len(m.EXP_TABLE) + 1, initialvalue=self.cfg.get("goal") or None)
@@ -1879,6 +1973,14 @@ class HUD:
             for n in [None] + [n for n in self.potki.in_use if self.potki.stats(n)[i]]:
                 sub.add_command(label=("● " if n == cur else "    ") + (n or T("brak (nie liczę)")),
                                 command=lambda k=k, n=n: self.set_pet(k, n))
+        tm, secs = self.timer_menu, self.timer_secs()
+        tm.delete(0, "end")
+        tm.add_command(label=T("Start ({})").format(f"{secs // 60}:{secs % 60:02d}"),
+                       command=self.start_timer)
+        tm.add_command(label=T("Stop"), command=self.stop_timer, state="normal" if self.timer_end else "disabled")
+        tm.add_command(label=T("Długość…"), command=self.set_timer_secs)
+        tm.add_command(label=("● " if self.cfg.get("timer_sound", True) else "    ") + T("Dźwięk"),
+                       command=self.toggle_timer_sound)
         self.menu.tk_popup(e.x_root, e.y_root)
 
     def set_pet(self, k, name):
