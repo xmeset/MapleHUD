@@ -1359,7 +1359,15 @@ class HUD:
             r = 3.5 * self.scale
             c.create_oval(x, hh / 2 - r, x + 2 * r, hh / 2 + r, fill=dot, outline="#ffffff")
             x += round(11 * self.scale)
-        c.create_text(x, hh / 2, text=title, font=self.f("xbold", 10), fill=HEAD_TEXT, anchor="w")
+        return c.create_text(x, hh / 2, text=title, font=self.f("xbold", 10), fill=HEAD_TEXT, anchor="w")
+
+    @staticmethod
+    def fit_text(c, item, right):
+        """Shortens a text item (with …) until it ends before x = right."""
+        text = c.itemcget(item, "text")
+        while text and c.bbox(item)[2] > right:
+            text = text[:-1]
+            c.itemconfig(item, text=text.rstrip(" ·") + "…")
 
     def buttons(self, c, w, hh, items):
         s = self.scale
@@ -1393,11 +1401,12 @@ class HUD:
         hh = round(18 * sc)
         dot = {"on": GREEN, "wait": "#f2b33a", "off": "#9a9a9a", "err": RED}[s["state"]]
         title = f"LV {s['level'] or '?'}" + (f"  ·  {s['map']}" if s.get("map") else "")
-        self.header(c, w, hh, title if len(title) <= 30 else title[:29] + "…", dot)
+        tid = self.header(c, w, hh, title, dot)
         x = self.buttons(c, w, hh, (("b_end", "■"), ("b_toggle", "⏸" if s["on"] else "▶"),
-                                    ("b_maps", "▾" if self.show_maps else "▴")))
-        c.create_text(x - 4 * sc, hh / 2, text=fmt_clock(s["elapsed"]), font=self.f("semi", 8.5), fill=HEAD_TEXT,
-                      anchor="e")
+                                    ("b_maps", "▾" if self.show_maps else "▴"), ("timer", "⏱")))
+        cid = c.create_text(x - 4 * sc, hh / 2, text=fmt_clock(s["elapsed"]), font=self.f("semi", 8.5), fill=HEAD_TEXT,
+                            anchor="e")
+        self.fit_text(c, tid, c.bbox(cid)[0] - 6 * sc)
         if s["pct"] is not None:
             fx = w * min(100, s["pct"]) / 100
             for i in range(round(3 * sc)):
