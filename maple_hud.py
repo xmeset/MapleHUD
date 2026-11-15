@@ -713,15 +713,18 @@ class Engine:
         if r.window != self.last_window:
             self.last_window = r.window
             if r.window:
-                self.log(f"okno: {r.window} (zmiany meso pomijane)")
+                self.log(f"okno: {r.window} " + ("(sprzedaz liczona jako zarobek)" if r.window == "shop"
+                                                  else "(zmiany meso pomijane)"))
         if r.mesos is not None and r.mesos != self.last_mesos:
             self.log(f"meso w eq: {self.last_mesos} -> {r.mesos}  (EXP leci: {t.running})")
             self.last_mesos = r.mesos
-        if r.window:
+        apart = r.window in ("storage", "trade")
+        active = s.on or self.t.elapsed() > 0
+        if apart:
             self.meso.note_window(now)
-        self.meso.tick(s.on, now)
+        self.meso.tick(active, now)
         if r.mesos is not None:
-            got = self.meso.feed(r.mesos, r.window, s.on and t.exp is not None, now)
+            got = self.meso.feed(r.mesos, apart, active, now)
             if got:
                 self.log(f"meso +{got:,} (zarobione w sesji: {self.meso.gained:,})")
         if self.meso_start is None and self.meso.fresh():

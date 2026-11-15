@@ -3,11 +3,12 @@ MAX_STEP = 300_000
 
 
 class MesoCounter:
-    """Mesos picked up, from the inventory's mesos count: every confirmed rise is earned, except at a
-    shop, storage or trade window (or just after one), and a drop is spending. Never reset by map
-    changes; the inventory only has to be opened now and then. A number seen only once (inventory
-    opened for a moment) is believed when the next number is at least as big. A rise that spans the
-    start of a run (end of grind, pause, reset) only counts for the part of the time after it."""
+    """Mesos earned during a grind, from the inventory's mesos count: every confirmed rise while a grind
+    is on (paused or not: loot sold at a shop on a repot trip is the grind's too) is earned, except at a
+    storage or trade window (or just after one). A drop is spending and doesn't count (potions are
+    counted as they're drunk). Never reset by map changes; the inventory only has to be opened now and
+    then. A number seen only once (inventory opened for a moment) is believed when the next number is at
+    least as big. A rise that spans the start of a grind only counts for the part of the time after it."""
 
     def __init__(self):
         self.reset()

@@ -22,7 +22,7 @@ def amount(value, maximum):
     return 0
 
 
-PET_DOUBT = 4              # this many pet heals in a row that fit another potion better: the pet is set wrong
+PET_DOUBT = 8              # this many pet heals in a row that fit another potion better: the pet is set wrong
 
 
 class PotCounter:
@@ -205,6 +205,8 @@ class PotCounter:
         """Notices a pet set to the wrong potion: its heals keep fitting another potion, not its own."""
         names = [p["name"] for p in combo]
         for k, (d, capped, mx) in deltas.items():
+            if k == "hp":
+                continue                # (hits taken in between blur HP heals too much to tell potions apart)
             pet = self.pet(k)
             if not pet or pet not in names or capped or d <= self.up:
                 continue
