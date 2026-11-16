@@ -59,7 +59,7 @@ SESJE = DATA / "sesje.csv"
 IDLE_GAP = 600
 OTHER = {"Inne HP": "hp", "Inne MP": "mp"}
 CSV_HEAD = ["data", "start", "koniec", "minuty", "lv", "exp", "exp_h", "proc_lv_h", "meso", "poty_koszt", "netto", "poty",
-            "exp_h_15min"]
+            "exp_h_15min", "meso_h", "netto_h"]
 BEST_SPAN = 15 * 60
 MIN_MAP_ROW = 120
 RETURN_GAP = 600
@@ -615,7 +615,9 @@ class Engine:
         vals = [time.strftime("%Y-%m-%d", start), time.strftime("%H:%M", start), time.strftime("%H:%M"),
                 round(el / 60), level or "", exp, round(exp_h), "" if proc_h is None else f"{proc_h:.1f}".replace(".", ","),
                 "" if meso is None else meso, cost, "" if meso is None else meso - cost, used_txt,
-                "" if best15 is None else round(best15)]
+                "" if best15 is None else round(best15),
+                "" if meso is None or el <= 0 else round(meso / el * 3600),
+                "" if meso is None or el <= 0 else round((meso - cost) / el * 3600)]
         if maps is not None:
             vals.insert(1, maps)
         return el, vals, info
