@@ -342,7 +342,7 @@ class Engine:
         self.potki_ref = potki
         self.maps_done = []
         self.exp_hist = []
-        self.meso_start = None
+        self.meso_start, self.meso_el = None, 0.0
         try:
             self.buff_table = buffs.BuffTable.load(m.ASSETS / "buff_table.json")
         except Exception as e:
@@ -599,6 +599,7 @@ class Engine:
 
     def _totals(self, g, maps=None):
         el = self.t.elapsed() - g["el"]
+        el_m = self.meso_el - g["el"]
         used = {n: c - g["used"].get(n, 0) for n, c in self.used().items() if c - g["used"].get(n, 0) > 0}
         cost = round(sum(c * self.potki_ref.price(n) for n, c in used.items()))
         exp = self.t.gained - g["gained"]
@@ -616,8 +617,8 @@ class Engine:
                 round(el / 60), level or "", exp, round(exp_h), "" if proc_h is None else f"{proc_h:.1f}".replace(".", ","),
                 "" if meso is None else meso, cost, "" if meso is None else meso - cost, used_txt,
                 "" if best15 is None else round(best15),
-                "" if meso is None or el <= 0 else round(meso / el * 3600),
-                "" if meso is None or el <= 0 else round((meso - cost) / el * 3600)]
+                "" if meso is None or el_m < 30 else round(meso / el_m * 3600),
+                "" if meso is None or el_m < 30 or el <= 0 else round(meso / el_m * 3600 - cost / el * 3600)]
         if maps is not None:
             vals.insert(1, maps)
         return el, vals, info
@@ -729,7 +730,9 @@ class Engine:
             got = self.meso.feed(r.mesos, apart, active, now)
             if got:
                 self.log(f"meso +{got:,} (zarobione w sesji: {self.meso.gained:,})")
-        if self.meso_start is None and self.meso.fresh():
+        if r.mesos is not None and r.mesos == self.meso.base and active:
+            self.meso_el = self.t.elapsed()
+        if self.meso_start is None and self.meso.base is not None:
             self.meso_start = self.meso.base - self.meso.gained
             self.log(f"meso w eq na starcie runu: {self.meso_start:,}")
         if r.bar is not None:
@@ -844,7 +847,7 @@ class Engine:
             self.session.start(time.monotonic())
         self.maps_done = []
         self.exp_hist = []
-        self.meso_start = None
+        self.meso_start, self.meso_el = None, 0.0
         self.away = None
         self._start_segment()
         self.run = self.seg
@@ -860,11 +863,11 @@ class Engine:
         level = m.level_for_req(t.req) or self.cfg.get("level")
         pct = (t.exp / t.req * 100) if t.exp is not None and t.req else t.pct
         ttl = (t.req - t.exp) / rate * 3600 if rate and t.req and t.exp is not None else None
-        meso_h = self.meso.gained / el * 3600 if el >= 30 and self.meso.base is not None else None
+        meso_h = self.meso.gained / self.meso_el * 3600 if self.meso_el >= 30 and self.meso.base is not None else None
         used = self.used()
         cost = round(sum(n * potki.price(name) for name, n in used.items()))
         cost_h = cost / el * 3600 if el >= 30 else None
-        net_h = (meso_h or 0) - (cost_h or 0) if meso_h is not None or cost_h else None
+        net_h = meso_h - (cost_h or 0) if meso_h is not None else None
         rows, hp_h, mp_h = [], 0.0, 0.0
         hpm = self.hpmp[0][1] if self.hpmp else 0
         mpm = self.hpmp[1][1] if self.hpmp else 0
@@ -904,7 +907,7 @@ class Engine:
                             exp_h_15min=info["best15"] or "")
         return dict(map=self.map_cur, state=state, elapsed=el, level=level, pct=pct, exp=t.exp, ttl=ttl, exp_h=rate,
                     pct_h=pct_h,
-                    exp_5=t.rolling_rate(), meso_h=meso_h, meso_seen=self.meso.fresh(), cost=cost,
+                    exp_5=t.rolling_rate(), meso_h=meso_h, meso_seen=self.meso.base is not None, cost=cost,
                     cost_h=cost_h, net_h=net_h, rows=rows, hp_h=hp_h, mp_h=mp_h, status=flash or self.status,
                     flash=bool(flash), estimated=t.estimated, waiting=s.waiting, on=s.on,
                     hpmp=self.hpmp if now - self.hpmp_at < 3 else None, counting=self.counting(),
