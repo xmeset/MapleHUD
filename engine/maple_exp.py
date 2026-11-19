@@ -1544,6 +1544,30 @@ def read_mesos_positions(bgr, field, templates, digit_count=None):
     return int(digits), lay._replace(exp=cells), min(scores), min(leads)
 
 
+def fit_mesos_field(bgr, field, templates):
+    """(field, reading) for the mesos box found at about `field`: the digits sit at fixed spots from the
+    box's edges, so a box found a pixel off can't be read. Tries it as found, then a pixel either way.
+    (None, None) if no fit reads. The reading's Layout is for a crop round the box, whose top left
+    is left in fit_mesos_field.offset."""
+    x, y, w, h = field
+    H, W = bgr.shape[:2]
+    m = 2 * h                                   # (read on a crop round the box: much quicker than the whole screen)
+    ox, oy = max(0, x - m), max(0, y - m)
+    crop = bgr[oy:min(H, y + h + m), ox:min(W, x + w + m)]
+    best = (None, None)
+    fit_mesos_field.offset = (ox, oy)
+    for dy, dh, dw in [(0, 0, 0)] + [(dy, dh, dw) for dy in (0, -1, 1) for dh in (0, 1, -1) for dw in (0, 1, -1)][1:]:
+        f = (x, y + dy, w + dw, h + dh)
+        if f[1] < 0 or f[1] + f[3] > H or f[0] + f[2] > W or f[3] < 8:
+            continue
+        got = read_mesos_positions(crop, (f[0] - ox, f[1] - oy, f[2], f[3]), templates)
+        if got and (best[1] is None or got[2] > best[1][2]):
+            best = (f, got)
+            if got[2] >= 0.9:
+                break
+    return best
+
+
 def read_mesos_digits(lay, templates):
     """The number in the mesos box, or None if any digit is unclear."""
     s = ""
@@ -2310,6 +2334,9 @@ class ScreenReader:
                     if self.window:
                         self.next_scan = now + WINDOW_SCAN_SECONDS  # mesos change here: look often
                     fields = find_mesos_fields(img, g, hsv, narrow=window == "shop")   # the solid box is easy to spot
+                    if self.mesos_digits.complete:      # (a window's title bar can pass for a box: read them)
+                        fields = [f for f in (fit_mesos_field(img, f, self.mesos_digits.templates())[0]
+                                              for f in fields) if f]
                     if window == "trade" and not fields:            # its chat panel may cover the coin
                         box = find_trade_mesos_box(img, g, hsv)
                         fields = [box] if box else []
@@ -2457,10 +2484,13 @@ class ScreenReader:
 
         learned = self.mesos_digits
         if learned.complete:                          # all ten mesos digits learned
-            got = read_mesos_positions(img, (fx, fy, w, h), learned.templates())
+            fit, got = fit_mesos_field(img, (fx, fy, w, h), learned.templates())
             if not got:
                 self.mesos_fails += 1
                 return None, img, ()
+            cx, cy = fit_mesos_field.offset
+            if fit != (fx, fy, w, h):                 # (found a pixel off: read it where it really is from now on)
+                self.mesos_box = (self.mesos_box[0] + fit[0] - fx, self.mesos_box[1] + fit[1] - fy, fit[2], fit[3])
             self.mesos_fails = 0
             value, lay, score, lead = got
             if not solid and len(str(value)) != self.mesos_count:
@@ -2470,11 +2500,11 @@ class ScreenReader:
                 last, n = self.mesos_pending
                 self.mesos_pending = (value, n + 1 if _agrees(value, last) else 1)
                 if self.mesos_pending[1] < 3:
-                    return None, img, boxes_of(lay)
+                    return None, img, boxes_of(lay, cx, cy)
             self.mesos_count, self.mesos_pending = len(str(value)), (None, 0)
             if solid and score >= 0.95 and lead >= 0.15:
                 learned.learn(lay, value)             # more examples, from very clean looks
-            return value, img, boxes_of(lay)
+            return value, img, boxes_of(lay, cx, cy)
         # Still learning the mesos font: a new number needs Tesseract's OK. On a solid box
         # Tesseract alone is enough; on a see-through box both readers must agree.
         lay = mesos_layout(img, (fx, fy, w, h))
