@@ -13,6 +13,7 @@ REF_H = 1080
 BLUR = 4
 STRIP_W, STRIP_H = 0.55, 110    # share of the window's width (from its right edge), px tall at 1080 p
 ACCEPT = 0.80                   # how alike (correlation) a match must be at least
+FLAT = 16                       # a band whose colours vary less than this (variance) is flat: no match
 BANDS = 6                       # the icon is compared in this many bands, top to bottom
 FRAME_DARK, FRAME_STEP = 120, 40    # the frame is darker than this, and this much darker than just inside it
 
@@ -91,7 +92,9 @@ def match(img, item):
                 s1 = s1 + patch.sum(2)
                 s2 = s2 + (patch * patch).sum(2)
                 sx = sx + (patch * v).sum(2)
-            bands.append(sx / np.sqrt(np.maximum(s2 - s1 * s1 / ref.size, 1e-6)))
+            var = s2 - s1 * s1 / ref.size
+            # (a flat patch, e.g. a blacked-out window, has nothing to correlate: dividing by ~0 gave scores of 20)
+            bands.append(np.where(var > FLAT * ref.size, np.clip(sx / np.sqrt(np.maximum(var, 1e-6)), -1, 1), 0))
         bands = np.sort(np.stack(bands), axis=0)[1:].mean(0)
         dark = sum(grey[y0 + y:y1 + y:step, x0 + x:x1 + x:step] for x, y in edge) / len(edge)
         light = sum(bright[y0 + y:y1 + y:step, x0 + x:x1 + x:step] for x, y in inner) / len(inner)
