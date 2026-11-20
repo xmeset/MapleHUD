@@ -2595,6 +2595,8 @@ class ExpTracker:
 
     WRAP_WAIT_READS = 40                      # %-only readings (about a minute) to wait for the level after a wrap
 
+    ignore_gains = False        # set while in a town: EXP there is from quests, not from grinding
+
     def __init__(self):
         self.reset()
 
@@ -2711,7 +2713,7 @@ class ExpTracker:
         return abs(e / self.req * 100 - p) <= 0.02 + 0.003 * p
 
     def _add_gain(self, amount):
-        if self.running:
+        if self.running and not self.ignore_gains:
             self.gained += amount
             now = self.elapsed()
             self.samples.append((now, self.gained))

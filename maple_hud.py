@@ -741,6 +741,7 @@ class Engine:
             self._map_read(m.snap_map_name(r.map))
         self.error = not r.candidates
         if r.candidates:
+            t.ignore_gains = m.is_town(self.map_cur)
             if r.percent_only:
                 level, source = r.level or ((self.cfg["level"], "typed") if self.cfg.get("level") else (None, None))
                 ok, note = s.observe_percent(r.candidates[0][1], level, source, now)
