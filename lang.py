@@ -49,6 +49,7 @@ EN = {
     "Dźwięk": "Sound",
     "Ile sekund (np. 90 = 1:30):": "How many seconds (e.g. 90 = 1:30):",
     "ZBIERAJ!": "LOOT!",
+    "PAUZA, a EXP leci ▶": "PAUSED, EXP coming ▶",
     "POTY": "POTIONS",
     "UŻYTE": "USED",
     "NA HR": "PER HR",

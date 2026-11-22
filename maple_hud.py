@@ -71,6 +71,7 @@ MAP_RUNS = 6
 SUMMARY_EVERY = 30
 GAME_GONE = 10
 UI_HALF = 400
+PAUSED_RISES, PAUSED_WINDOW = 4, 90  # this many EXP gains within this many seconds while paused: remind to press Start
 BUFF_POLL = 0.5
 BUFF_HOLD = 1.3
 KEY = "#0b0a0c"
@@ -343,6 +344,7 @@ class Engine:
         self.maps_done = []
         self.exp_hist = []
         self.meso_start, self.meso_el = None, 0.0
+        self.paused_rises = []
         try:
             self.buff_table = buffs.BuffTable.load(m.ASSETS / "buff_table.json")
         except Exception as e:
@@ -742,11 +744,16 @@ class Engine:
         self.error = not r.candidates
         if r.candidates:
             t.ignore_gains = m.is_town(self.map_cur)
+            exp_before = t.exp
             if r.percent_only:
                 level, source = r.level or ((self.cfg["level"], "typed") if self.cfg.get("level") else (None, None))
                 ok, note = s.observe_percent(r.candidates[0][1], level, source, now)
             else:
                 ok, note = s.observe(r.candidates, r.confident, now)
+            if not s.on and exp_before is not None and t.exp is not None and t.exp > exp_before:
+                self.paused_rises = [a for a in self.paused_rises if now - a <= PAUSED_WINDOW] + [now]
+                if len(self.paused_rises) == PAUSED_RISES:
+                    self.log("pauza, a EXP leci – przypominam o Start")
             if not self.exp_hist or self.exp_hist[-1][1] != t.gained:
                 self.exp_hist.append((t.elapsed(), t.gained))
             self.rejected = 0 if ok else self.rejected + 1
@@ -817,8 +824,11 @@ class Engine:
     def toggle(self):
         if self.session.on:
             self.session.pause()
+            self.log("pauza (recznie)")
         else:
             self.session.start(time.monotonic())
+            self.log("start (recznie)")
+        self.paused_rises = []
 
     def finish(self):
         if self.t.elapsed() - self.run["el"] < 1 and not self.meso.gained and not any(self.used().values()):
@@ -912,6 +922,7 @@ class Engine:
                     cost_h=cost_h, net_h=net_h, rows=rows, hp_h=hp_h, mp_h=mp_h, status=flash or self.status,
                     flash=bool(flash), estimated=t.estimated, waiting=s.waiting, on=s.on,
                     hpmp=self.hpmp if now - self.hpmp_at < 3 else None, counting=self.counting(),
+                    paused_exp=not s.on and len([a for a in self.paused_rises if now - a <= PAUSED_WINDOW]) >= PAUSED_RISES,
                     last=(now - last[0], last[1]) if last else None, live=live, eq=self.eq(),
                     pet_doubt={k: v for k, v in self.counter.pet_doubt.items() if v})
 
@@ -1410,7 +1421,12 @@ class HUD:
         hh = round(18 * sc)
         dot = {"on": GREEN, "wait": "#f2b33a", "off": "#9a9a9a", "err": RED}[s["state"]]
         title = f"LV {s['level'] or '?'}" + (f"  ·  {s['map']}" if s.get("map") else "")
+        nag = s.get("paused_exp")
+        if nag:
+            title, dot = T("PAUZA, a EXP leci ▶"), mix(RED, "#ffd0c8", 0.5 + 0.5 * math.sin(time.monotonic() * 2 * math.pi))
         tid = self.header(c, w, hh, title, dot)
+        if nag:
+            c.itemconfig(tid, fill=RED)
         x = self.buttons(c, w, hh, (("b_end", "■"), ("b_toggle", "⏸" if s["on"] else "▶"),
                                     ("b_maps", "▾" if self.show_maps else "▴"), ("timer", "⏱")))
         cid = c.create_text(x - 4 * sc, hh / 2, text=fmt_clock(s["elapsed"]), font=self.f("semi", 8.5), fill=HEAD_TEXT,
