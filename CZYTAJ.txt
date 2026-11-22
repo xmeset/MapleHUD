@@ -4,6 +4,7 @@ MapleHUD - overlay do MapleStory Classic World
 Co pokazuje (dwa male panele po bokach dolnego paska gry):
   lewy:  LV, mapa, EXP/hr i % levelu/hr, EXP/hr z ostatnich 5 min, czas do nastepnego levelu
          przycisk kwadrat = koniec grindu i podsumowanie, trojkat = nowy grind
+         zegarek = minutnik zbierania dropow (domyslnie 1:30, potem "ZBIERAJ!")
          strzalka ^ = najlepsze mapy, cel levelu i DZIS (EXP, czas, EXP/h, meso z dzisiaj);
          klik w mape = wszystkie jej runy
   prawy: meso/h, koszt potow/h, netto/h (strzalka ^ = lista potow)
@@ -19,18 +20,21 @@ Jezyk: zgodny z Windows. Zmiana: prawy klik na panelu > Jezyk / Language.
 
 Skad bierze dane (tylko zrzuty ekranu, nic nie zmienia w grze):
   EXP   - pasek EXP na dole gry
-  meso  - licznik meso w ekwipunku: otworz eq na start i co jakis czas
+  meso  - licznik meso w ekwipunku: otworz eq co jakis czas
+          (sprzedaz w sklepie w trakcie grindu liczy sie jako zarobek)
   poty  - skoki HP/MP na pasku (dziala tez z potami od peta)
   mapa  - nazwa z minimapy (minimapa musi byc otwarta)
 
 Ustawienia:
   potki.json - ktore poty liczyc ("uzywane"), ile daja HP/MP i ich ceny.
                Po zmianie: prawy klik na panelu > Wczytaj potki.json.
-  Prawy klik na panelu: start/pauza, koniec grindu, reset, przezroczystosc, zamknij.
+  Prawy klik na panelu: start/pauza, koniec grindu, reset, minutnik, pet, przezroczystosc, zamknij.
+  Final Attack (lucznik): gdy buff wisi, jego ikonka pojawia sie przy quickslocie.
   Poty na quickslocie sa liczone dokladnie (takze te od peta).
 
 Wyniki zapisuja sie w folderze data:
-  mapy.csv  - czas, EXP, EXP/hr, meso, koszt potow, netto per mapa (otworz w Excelu)
+  mapy.csv  - czas, EXP, EXP/hr, meso, koszt potow, netto, meso/h i netto/h per mapa
+              (otworz w Excelu; zamknij go przed gra)
   sesje.csv - to samo dla calego grindu
   sesja.log - szczegolowy log (przydatny, gdy cos nie dziala)
 

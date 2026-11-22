@@ -23,10 +23,12 @@ Język zgodny z Windows (polski lub angielski). Zmiana: **prawy klik na panelu �
 
 | Panel | Zawartość |
 |---|---|
-| **Lewy** | LV, mapa, pasek EXP, EXP/h i % levelu na godzinę, EXP/h z ostatnich 5 min, czas do następnego levelu, czas sesji |
-| **Prawy** | meso/h, koszt potów/h, netto/h (meso − poty) |
+| **Lewy** | LV, mapa, pasek EXP, EXP/h i % levelu na godzinę, EXP/h z ostatnich 5 min, czas do następnego levelu, czas sesji. Przyciski: **⏱** minutnik, ▴ mapy, ▶/⏸ start/pauza, ■ koniec grindu. Gdy grind jest na pauzie, a EXP leci, nagłówek zmienia się na czerwone „PAUZA, a EXP leci ▶”. |
+| **Prawy** | meso/h, koszt potów/h, netto/h (meso − poty). Gdy pet chyba pije inny pot MP niż ustawiony, w nagłówku pojawia się czerwone „pet pije …?”. |
 | **▴ Poty** | Twój pet i co pije (HP/MP, wybór z listy), lista potów z ikonkami: ile zużytych, ile na godzinę, koszt, aktualne HP/MP. Na dole **meso w eq**: ile było na starcie runu i ile jest teraz. |
-| **▴ Mapy** (lewy panel) | 3 najlepsze mapy: przy każdej najlepszy run (EXP/h, % obecnego levelu na godzinę, netto/h, data). Pod EXP/h: **15m** – najlepsze 15 min ze wszystkich runów na tej mapie, czyli ile da się wyciągnąć na tym spocie. Liczą się tylko runy dłuższe niż 15 min, więc krótkie wejścia nic nie psują. Wyjście do sklepu czy storage i powrót na tę samą mapę w ciągu 10 min nie przerywa runu (mapy po drodze, nawet z paroma zabitymi mobami, też nie). Przerwa – repot, droga, czekanie na PQ – wlicza się do runu, tak jak w prawdziwym grindzie. Obecny run jest dopisany na żywo po 5 min (etapy PQ to jedna mapa). Na górze cel levelu: ile EXP i czasu do wybranego poziomu – kliknij, żeby ustawić. Pod nim **DZIŚ**: cały EXP z dzisiaj, czas grania, średnie EXP/h i meso na plus (po odjęciu potów). **Klik w mapę** rozwija wszystkie jej runy: data i godzina, czas, LV, EXP/h, najlepsze 15 min i meso na plus za run, a nad nimi suma (ile runów, łączny czas, średnie EXP/h, meso). Drugi klik zwija. |
+| **▴ Mapy** (lewy panel) | 3 najlepsze mapy: przy każdej najlepszy run (EXP/h, % obecnego levelu na godzinę, netto/h, data). Pod EXP/h: **15m** – najlepsze 15 min ze wszystkich runów na tej mapie, czyli ile da się wyciągnąć na tym spocie. Przy każdym runie % levelu, na którym był robiony, na godzinę. Runy krótsze niż 15 min są schowane (klik, żeby je pokazać), więc krótkie wejścia nic nie psują; starsze runy są na kolejnych stronach. Wyjście do sklepu czy storage i powrót na tę samą mapę w ciągu 10 min nie przerywa runu (mapy po drodze, nawet z paroma zabitymi mobami, też nie). Przerwa – repot, droga, czekanie na PQ – wlicza się do runu, tak jak w prawdziwym grindzie. Obecny run jest dopisany na żywo po 5 min (etapy PQ to jedna mapa). Na górze cel levelu: ile EXP i czasu do wybranego poziomu – kliknij, żeby ustawić. Pod nim **DZIŚ**: cały EXP z dzisiaj, czas grania, średnie EXP/h i meso na plus (po odjęciu potów). **Klik w mapę** rozwija wszystkie jej runy: data i godzina, czas, LV, EXP/h, najlepsze 15 min i meso na plus za run, a nad nimi suma (ile runów, łączny czas, średnie EXP/h, meso). Drugi klik zwija. |
+| **⏱ Minutnik** | dla map, na których trzeba co jakiś czas zbierać dropy: klik ⏱ startuje odliczanie (domyślnie 1:30) w okienku przy quickslocie, po czasie pulsuje „ZBIERAJ!” i (opcjonalnie) słychać sygnał. Klik w okienko liczy od nowa. Długość, stop i dźwięk: **prawy klik → Minutnik (zbieranie dropów)**. Klik nie zabiera klawiatury grze. |
+| **Final Attack** (łucznik) | gdy w prawym górnym rogu wisi buff Final Attack, przy lewym dolnym rogu quickslota pojawia się jego ikonka z pulsującą ramką; znika chwilę po zużyciu buffa. |
 | **■ Koniec grindu** | podsumowanie: czas, mapy, EXP i % levelu, zebrane meso, meso w eq (start → koniec), koszt potów, netto. Zapisuje do `sesje.csv`. ▶ zaczyna nowy grind. |
 
 Panele same dopasowują się do rozmiaru okna gry (1366×768, 1920×1080 i inne) i chowają się, gdy gra nie jest na wierzchu. Po wyłączeniu gry MapleHUD zamyka się sam (po ok. 10 s).
@@ -37,16 +39,16 @@ MapleHUD tylko **robi zrzuty ekranu** i odczytuje z nich liczby, tak jak OBS alb
 
 | Dane | Skąd |
 |---|---|
-| **EXP** | pasek EXP na dole gry |
-| **Meso** | licznik meso w ekwipunku: otwórz eq na starcie i co jakiś czas (zakupy w sklepie, storage i trade są pomijane). Po końcu grindu albo pauzie znów pokazuje się „otwórz eq”: meso zebrane przed startem nie wlicza się do nowego runu. |
-| **Poty** | liczba sztuk na quickslocie (dokładne, także poty od peta; chwilowo wyszarzona ikonka po wypiciu niczego nie gubi), a dla potów spoza quickslota skoki HP/MP na pasku statusu, np. +100 HP = Red Potion. Leczenie ze skilli (HP w górę przy zużyciu many) nie jest liczone jako pot. Gdy quickslot jest schowany, liczą się skoki HP/MP, a po jego pokazaniu liczba się wyrównuje. Skok, który nie pasuje do żadnego pota, trafia do **Inne HP / Inne MP** i kosztuje tyle, co najtańszy pot (meso za punkt HP/MP). |
+| **EXP** | pasek EXP na dole gry. EXP zdobyty w mieście (nagrody za questy) nie liczy się do grindu. |
+| **Meso** | licznik meso w ekwipunku: otwórz eq co jakiś czas. W trakcie grindu (także na pauzie) każdy przyrost meso to zarobek, również sprzedaż dropów w sklepie; wydatki (np. zakup potów) się nie liczą, bo poty liczone są przy piciu. Storage i trade są pomijane. Meso/h liczone jest za czas do ostatniego otwarcia eq, więc nie spada między otwarciami. „otwórz eq” pokazuje się tylko, gdy meso nie było jeszcze widziane od włączenia programu. |
+| **Poty** | liczba sztuk na quickslocie (dokładne, także poty od peta; chwilowo wyszarzona ikonka po wypiciu niczego nie gubi), a dla potów spoza quickslota skoki HP/MP na pasku statusu, np. +100 HP = Red Potion. Leczenie ze skilli (HP w górę przy zużyciu many) nie jest liczone jako pot. Gdy quickslot jest schowany, liczą się skoki HP/MP, a po jego pokazaniu liczba się wyrównuje. Niepewna cyfra na quickslocie (np. ostatnia cyfra na ikonce pota) nie jest zgadywana: wtedy liczą się skoki HP/MP, aż liczba będzie czytelna. Skok, który nie pasuje do żadnego pota, trafia do **Inne HP / Inne MP** i kosztuje tyle, co najtańszy pot (meso za punkt HP/MP). |
 | **Mapa** | nazwa z minimapy (minimapa musi być otwarta) |
 
 Liczenie pauzuje się samo po 10 min bez EXP (AFK, dłuższa przerwa) i rusza przy następnym EXP; ten czas bez EXP nie jest liczony. Wyjście z okna gry, sklep, etap PQ bez mobów czy czekanie na wejście do PQ nie zatrzymują czasu.
 
 ## Ustawienia
 
-**Prawy klik na panelu**: start/pauza, koniec grindu, reset sesji, lista potów, porównanie map, cel levelu, **Pet: pot HP / pot MP** (co pije pet), przezroczystość, poziom (gdy pasek pokazuje tylko %), język, zamknij.
+**Prawy klik na panelu**: start/pauza, koniec grindu, reset sesji, lista potów, porównanie map, cel levelu, **Minutnik (zbieranie dropów)**, **Pet: pot HP / pot MP** (co pije pet), przezroczystość, poziom (gdy pasek pokazuje tylko %), język, zamknij.
 
 **`potki.json`** (obok MapleHUD.exe):
 
@@ -71,9 +73,10 @@ Po zmianie wybierz **prawy klik → Wczytaj potki.json**.
 
 W folderze `data` obok exe:
 
-- **`mapy.csv`** – każda mapa (co najmniej 2 min): czas, EXP, EXP/h, % levelu/h, zebrane meso, koszt potów, netto i zużyte poty. Otwierasz w Excelu.
+- **`mapy.csv`** – każda mapa (co najmniej 2 min): czas, EXP, EXP/h, % levelu/h, zebrane meso, koszt potów, netto, zużyte poty, najlepsze 15 min oraz **meso/h** i **netto/h** (`meso_h`, `netto_h`). Otwierasz w Excelu (zamknij plik przed grą, inaczej Windows zablokuje zapis).
 - **`sesje.csv`** – to samo dla całego grindu, zapisywane po kliknięciu ■, przy resecie i zamknięciu.
-- **`sesja.log`** – szczegółowy log: każdy rozpoznany pot, zmiany meso, mapy. Przydatny, gdy coś nie działa.
+- **`sesja.log`** – szczegółowy log: każdy rozpoznany pot, zmiany meso, mapy, start/pauza. Przydatny, gdy coś nie działa.
+- **`buff_debug/`** – ostatnie 40 wycinków ekranu z chwili pojawienia się Final Attack (z wynikiem dopasowania w nazwie), na wypadek fałszywych trafień.
 
 ## Ograniczenia
 
